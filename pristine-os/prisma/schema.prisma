@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  users     User[]
+  customers Customer[]
+  orders    Order[]
+}
+
+
+model User {
+  id             String   @id @default(cuid())
+  name           String?
+  email          String   @unique
+  password       String
+  role           String   @default("OWNER")
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+
+model Customer {
+  id             String   @id @default(cuid())
+  firstName      String
+  lastName       String
+  phone          String
+  email          String?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  orders         Order[]
+
+  createdAt DateTime @default(now())
+}
+
+
+model Order {
+  id             String   @id @default(cuid())
+  status         String   @default("RECEIVED")
+  total          Float    @default(0)
+
+  customerId     String
+  customer       Customer @relation(fields: [customerId], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  items          OrderItem[]
+
+  createdAt DateTime @default(now())
+}
+
+
+model OrderItem {
+  id        String @id @default(cuid())
+
+  name      String
+  quantity  Int    @default(1)
+  price     Float
+
+  orderId   String
+  order     Order @relation(fields: [orderId], references: [id])
+}
+
+
+model Payment {
+  id        String   @id @default(cuid())
+  amount    Float
+  method    String
+  createdAt DateTime @default(now())
+}
