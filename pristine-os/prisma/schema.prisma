@@ -6,17 +6,15 @@ datasource db {
   provider = "postgresql"
 }
 
-
 model Organization {
   id        String   @id @default(cuid())
   name      String
   createdAt DateTime @default(now())
 
-  users     User[]
   customers Customer[]
   orders    Order[]
+  users     User[]
 }
-
 
 model User {
   id             String   @id @default(cuid())
@@ -24,13 +22,11 @@ model User {
   email          String   @unique
   password       String
   role           String   @default("OWNER")
-
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime @default(now())
 
-  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id])
 }
-
 
 model Customer {
   id             String   @id @default(cuid())
@@ -38,48 +34,36 @@ model Customer {
   lastName       String
   phone          String
   email          String?
-
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime @default(now())
 
-  orders         Order[]
-
-  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id])
+  orders       Order[]
 }
-
 
 model Order {
   id             String   @id @default(cuid())
+  orderNumber    String   @unique
   status         String   @default("RECEIVED")
-  total          Float    @default(0)
-
   customerId     String
-  customer       Customer @relation(fields: [customerId], references: [id])
-
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  total          Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  items          OrderItem[]
-
-  createdAt DateTime @default(now())
+  customer     Customer     @relation(fields: [customerId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  garments     Garment[]
 }
 
-
-model OrderItem {
-  id        String @id @default(cuid())
-
-  name      String
-  quantity  Int    @default(1)
-  price     Float
-
-  orderId   String
-  order     Order @relation(fields: [orderId], references: [id])
-}
-
-
-model Payment {
+model Garment {
   id        String   @id @default(cuid())
-  amount    Float
-  method    String
+  name      String
+  quantity  Int      @default(1)
+  service   String
+  price     Float    @default(0)
+  orderId   String
   createdAt DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
 }
