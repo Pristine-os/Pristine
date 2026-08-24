@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import type { AuthOptions } from "next-auth";
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL!,
@@ -11,7 +12,7 @@ const prisma = new PrismaClient({
   adapter,
 });
 
-export const authOptions = {
+export const authOptions: AuthOptions = {
   providers: [
     Credentials({
       name: "Credentials",
@@ -62,7 +63,7 @@ export const authOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.organizationId = user.organizationId;
+        token.organizationId = (user as { organizationId: string }).organizationId;
       }
 
       return token;

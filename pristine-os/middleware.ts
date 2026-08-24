@@ -1,18 +1,22 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
 
-export function middleware(request: NextRequest) {
-  const loggedIn = request.cookies.get("loggedIn")?.value;
-
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Always allow login page
-  if (pathname === "/login") {
+  // Always allow the login page and NextAuth's own routes (csrf/session/callback)
+  if (pathname === "/login" || pathname.startsWith("/api/auth")) {
     return NextResponse.next();
   }
 
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+  });
+
   // If not logged in → force login
-  if (!loggedIn) {
+  if (!token) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

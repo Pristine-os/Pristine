@@ -17,6 +17,18 @@ type Garment = {
   price: number;
 };
 
+type PriceEntry = {
+  garmentType: string;
+  service: string;
+  price: number;
+};
+
+type PricingCatalog = {
+  garmentTypes: string[];
+  services: string[];
+  prices: PriceEntry[];
+};
+
 type Order = {
   id: string;
   orderNumber: string;
@@ -26,16 +38,6 @@ type Order = {
   customer: Customer;
   garments: Garment[];
 };
-
-const services = [
-  "Dry Clean",
-  "Shirt Laundry",
-  "Wash & Fold",
-  "Press Only",
-  "Alterations",
-  "Leather",
-  "Household",
-];
 
 const statuses = [
   "RECEIVED",
@@ -74,11 +76,39 @@ export default function OrdersPage() {
     useState<Garment[]>([
       {
         name: "",
-        service: "Dry Clean",
+        service: "",
         quantity: 1,
         price: 0,
       },
     ]);
+
+  const [catalog, setCatalog] =
+    useState<PricingCatalog | null>(null);
+
+  function lookupPrice(
+    garmentType: string,
+    service: string
+  ): number {
+    const match = catalog?.prices.find(
+      (entry) =>
+        entry.garmentType === garmentType &&
+        entry.service === service
+    );
+
+    return match ? match.price : 0;
+  }
+
+  function blankGarment(): Garment {
+    const name = catalog?.garmentTypes[0] || "";
+    const service = catalog?.services[0] || "";
+
+    return {
+      name,
+      service,
+      quantity: 1,
+      price: lookupPrice(name, service),
+    };
+  }
 
 
   /*
@@ -191,9 +221,71 @@ export default function OrdersPage() {
   }
 
 
+  /*
+   * Load pricing catalog
+   */
+
+  async function loadPricing() {
+    try {
+      const response =
+        await fetch(
+          "/api/pricing",
+          {
+            cache: "no-store",
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Failed to load pricing."
+        );
+      }
+
+      setCatalog(data);
+
+      const garmentType =
+        data.garmentTypes?.[0] || "";
+
+      const service =
+        data.services?.[0] || "";
+
+      setGarments((current) =>
+        current.length === 1 &&
+        !current[0].name &&
+        !current[0].service
+          ? [
+              {
+                name: garmentType,
+                service,
+                quantity: 1,
+                price: data.prices?.find(
+                  (entry: PriceEntry) =>
+                    entry.garmentType ===
+                      garmentType &&
+                    entry.service === service
+                )?.price || 0,
+              },
+            ]
+          : current
+      );
+
+    } catch (error) {
+      console.error(
+        "Failed to load pricing:",
+        error
+      );
+    }
+  }
+
+
   useEffect(() => {
     loadCustomers();
     loadOrders();
+    loadPricing();
   }, []);
 
 
@@ -204,12 +296,7 @@ export default function OrdersPage() {
   function addGarment() {
     setGarments([
       ...garments,
-      {
-        name: "",
-        service: "Dry Clean",
-        quantity: 1,
-        price: 0,
-      },
+      blankGarment(),
     ]);
   }
 
@@ -243,15 +330,34 @@ export default function OrdersPage() {
     value: string | number
   ) {
     setGarments(
-      garments.map(
-        (garment, i) =>
-          i === index
-            ? {
-                ...garment,
-                [field]: value,
-              }
-            : garment
-      )
+      garments.map((garment, i) => {
+        if (i !== index) {
+          return garment;
+        }
+
+        const updated = {
+          ...garment,
+          [field]: value,
+        };
+
+        /*
+         * Re-price the line whenever the
+         * garment or service changes so the
+         * catalog default is always applied
+         * first — the price field itself can
+         * still be edited afterward as an
+         * override.
+         */
+
+        if (field === "name" || field === "service") {
+          updated.price = lookupPrice(
+            updated.name,
+            updated.service
+          );
+        }
+
+        return updated;
+      })
     );
   }
 
@@ -590,7 +696,7 @@ export default function OrdersPage() {
                         Garment
                       </label>
 
-                      <input
+                      <select
                         value={
                           garment.name
                         }
@@ -604,9 +710,25 @@ export default function OrdersPage() {
                               .value
                           )
                         }
-                        placeholder="e.g. Shirt"
-                        className="w-full rounded-lg border px-3 py-2"
-                      />
+                        className="w-full rounded-lg border px-3 py-2 bg-white"
+                      >
+
+                        {(catalog?.garmentTypes || []).map(
+                          (garmentType) => (
+                            <option
+                              key={
+                                garmentType
+                              }
+                              value={
+                                garmentType
+                              }
+                            >
+                              {garmentType}
+                            </option>
+                          )
+                        )}
+
+                      </select>
 
                     </div>
 
@@ -636,7 +758,7 @@ export default function OrdersPage() {
                         className="w-full rounded-lg border px-3 py-2 bg-white"
                       >
 
-                        {services.map(
+                        {(catalog?.services || []).map(
                           (service) => (
                             <option
                               key={

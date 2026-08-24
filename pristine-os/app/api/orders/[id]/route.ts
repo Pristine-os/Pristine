@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { summarizePayments } from "@/lib/payments";
 
 type RouteContext = {
   params: Promise<{
@@ -40,6 +41,9 @@ export async function GET(
         customer: true,
         garments: true,
         organization: true,
+        payments: {
+          orderBy: { createdAt: "desc" },
+        },
       },
     });
 
@@ -54,7 +58,10 @@ export async function GET(
       );
     }
 
-    return Response.json(order);
+    return Response.json({
+      ...order,
+      paymentSummary: summarizePayments(order.total, order.payments),
+    });
   } catch (error) {
     console.error("GET ORDER ERROR:", error);
 
@@ -143,10 +150,16 @@ export async function PATCH(
         customer: true,
         garments: true,
         organization: true,
+        payments: {
+          orderBy: { createdAt: "desc" },
+        },
       },
     });
 
-    return Response.json(order);
+    return Response.json({
+      ...order,
+      paymentSummary: summarizePayments(order.total, order.payments),
+    });
   } catch (error) {
     console.error("UPDATE ORDER ERROR:", error);
 
