@@ -13,23 +13,36 @@ type Customer = {
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    fetch("/api/customers")
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setCustomers(data);
-        } else {
-          console.error("Customer API error:", data);
+    const timer = setTimeout(() => {
+      setLoading(true);
+
+      const query = search.trim()
+        ? `?search=${encodeURIComponent(search.trim())}`
+        : "";
+
+      fetch(`/api/customers${query}`, { cache: "no-store" })
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setCustomers(data);
+          } else {
+            console.error("Customer API error:", data);
+            setCustomers([]);
+          }
+        })
+        .catch((error) => {
+          console.error("Failed to load customers:", error);
           setCustomers([]);
-        }
-      })
-      .catch((error) => {
-        console.error("Failed to load customers:", error);
-        setCustomers([]);
-      });
-  }, []);
+        })
+        .finally(() => setLoading(false));
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [search]);
 
   return (
     <div className="p-8">
@@ -39,6 +52,15 @@ export default function CustomersPage() {
         </h1>
 
         <AddCustomerDialog />
+      </div>
+
+      <div className="mb-4">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, phone, or email"
+          className="w-full max-w-md rounded-lg border px-4 py-2"
+        />
       </div>
 
       <div className="border rounded-lg overflow-hidden">
@@ -52,7 +74,16 @@ export default function CustomersPage() {
           </thead>
 
           <tbody>
-            {customers.length === 0 ? (
+            {loading ? (
+              <tr>
+                <td
+                  colSpan={3}
+                  className="p-6 text-center text-gray-500"
+                >
+                  Loading customers...
+                </td>
+              </tr>
+            ) : customers.length === 0 ? (
               <tr>
                 <td
                   colSpan={3}
@@ -65,7 +96,10 @@ export default function CustomersPage() {
               customers.map((customer) => (
                 <tr
                   key={customer.id}
-                  className="border-b hover:bg-gray-50"
+                  onClick={() =>
+                    (window.location.href = `/customers/${customer.id}`)
+                  }
+                  className="border-b hover:bg-gray-50 cursor-pointer"
                 >
                   <td className="p-3">
                     {customer.firstName} {customer.lastName}

@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.organizationId) {
@@ -12,9 +12,22 @@ export async function GET() {
     );
   }
 
+  const url = new URL(request.url);
+  const search = url.searchParams.get("search")?.trim();
+
   const customers = await prisma.customer.findMany({
     where: {
       organizationId: session.user.organizationId,
+      ...(search
+        ? {
+            OR: [
+              { firstName: { contains: search, mode: "insensitive" } },
+              { lastName: { contains: search, mode: "insensitive" } },
+              { phone: { contains: search, mode: "insensitive" } },
+              { email: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
     },
     orderBy: {
       createdAt: "desc",
