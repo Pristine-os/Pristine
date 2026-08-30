@@ -22,6 +22,7 @@ export default function RootLayout({
           
           {/* Sidebar */}
           <aside
+            className="print:hidden"
             style={{
               width: "220px",
               background: "#111827",
@@ -78,7 +79,7 @@ export default function RootLayout({
               minWidth: 0,
             }}
           >
-            <div className="border-b bg-white px-4 py-3 flex justify-center">
+            <div className="border-b bg-white px-4 py-3 flex justify-center print:hidden">
               <GlobalSearch />
             </div>
 

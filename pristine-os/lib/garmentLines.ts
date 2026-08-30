@@ -1,9 +1,11 @@
 export type GarmentLine = {
+  id?: string;
   name: string;
   service: string;
   quantity: number;
   price: number;
   prepayDiscount: boolean;
+  printTag: boolean;
 };
 
 export type PriceEntry = {
@@ -40,6 +42,7 @@ export function blankGarmentLine(catalog: PricingCatalog | null): GarmentLine {
     quantity: 1,
     price: lookupCatalogPrice(catalog, name, service),
     prepayDiscount: false,
+    printTag: true,
   };
 }
 

@@ -55,7 +55,9 @@ type CreatedOrder = {
   orderNumber: string;
   status: string;
   total: number;
+  tagPrintingEnabled: boolean;
   customer: { id: string; firstName: string; lastName: string };
+  garments: { printTag: boolean }[];
   payments: Payment[];
   paymentSummary: PaymentSummary;
 };
@@ -107,6 +109,7 @@ export default function CounterPage() {
     useState<SelectedCustomer | null>(null);
   const [catalog, setCatalog] = useState<PricingCatalog | null>(null);
   const [garments, setGarments] = useState<GarmentLine[]>([]);
+  const [tagPrintingEnabled, setTagPrintingEnabled] = useState(true);
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [createOrderError, setCreateOrderError] = useState("");
 
@@ -224,6 +227,7 @@ export default function CounterPage() {
       });
 
       setGarments([blankGarmentLine(catalog)]);
+      setTagPrintingEnabled(true);
       setCreateOrderError("");
       setQuery("");
       setSearchResults(null);
@@ -355,12 +359,14 @@ export default function CounterPage() {
         body: JSON.stringify({
           customerId: selectedCustomer.id,
           status: "RECEIVED",
+          tagPrintingEnabled,
           garments: validGarments.map((garment) => ({
             name: garment.name.trim(),
             service: garment.service,
             quantity: Number(garment.quantity),
             price: Number(garment.price),
             prepayDiscount: garment.prepayDiscount === true,
+            printTag: garment.printTag !== false,
           })),
         }),
       });
@@ -462,6 +468,11 @@ export default function CounterPage() {
   function printTicket() {
     if (!order) return;
     window.open(`/orders/${order.id}/print`, "_blank");
+  }
+
+  function printGarmentTags() {
+    if (!order) return;
+    window.open(`/orders/${order.id}/tags`, "_blank");
   }
 
   function finishAndStartNext() {
@@ -719,7 +730,16 @@ export default function CounterPage() {
               onAdd={addGarment}
             />
 
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex items-center justify-between flex-wrap gap-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={tagPrintingEnabled}
+                  onChange={(e) => setTagPrintingEnabled(e.target.checked)}
+                />
+                Print Garment Tags
+              </label>
+
               <div className="w-full md:w-80 rounded-lg bg-gray-50 p-5">
                 <div className="flex justify-between text-lg font-bold">
                   <span>Order Total</span>
@@ -884,6 +904,20 @@ export default function CounterPage() {
             >
               🖨️ Print Ticket
             </button>
+
+            {order.tagPrintingEnabled &&
+            order.garments.some((g) => g.printTag) ? (
+              <button
+                onClick={printGarmentTags}
+                className="rounded-lg border border-gray-300 bg-white px-5 py-3 font-medium hover:bg-gray-50"
+              >
+                🏷️ Print Garment Tags
+              </button>
+            ) : (
+              <span className="text-sm text-gray-400 italic">
+                Garment Tags: Printing Disabled
+              </span>
+            )}
 
             <a
               href={`/orders/${order.id}`}

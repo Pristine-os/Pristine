@@ -17,14 +17,17 @@ type Garment = {
   service: string;
   price?: number;
   prepayDiscount: boolean;
+  printTag: boolean;
 };
 
 type EditableGarment = {
+  id?: string;
   name: string;
   service: string;
   quantity: number;
   price: number;
   prepayDiscount: boolean;
+  printTag: boolean;
 };
 
 type PriceEntry = {
@@ -59,6 +62,7 @@ type Order = {
   orderNumber: string;
   status: string;
   total: number;
+  tagPrintingEnabled: boolean;
   createdAt: string;
   updatedAt: string;
   customer: Customer;
@@ -176,11 +180,13 @@ export default function OrderDetailsPage({
 
     setEditGarments(
       order.garments.map((garment) => ({
+        id: garment.id,
         name: garment.name,
         service: garment.service,
         quantity: garment.quantity,
         price: Number(garment.price || 0),
         prepayDiscount: garment.prepayDiscount,
+        printTag: garment.printTag,
       }))
     );
 
@@ -205,6 +211,7 @@ export default function OrderDetailsPage({
         quantity: 1,
         price: lookupPrice(name, service),
         prepayDiscount: false,
+        printTag: true,
       },
     ]);
   }
@@ -258,11 +265,13 @@ export default function OrderDetailsPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           garments: editGarments.map((garment) => ({
+            ...(garment.id ? { id: garment.id } : {}),
             name: garment.name.trim(),
             service: garment.service,
             quantity: Number(garment.quantity),
             price: Number(garment.price),
             prepayDiscount: garment.prepayDiscount === true,
+            printTag: garment.printTag !== false,
           })),
         }),
       });
@@ -409,6 +418,35 @@ export default function OrderDetailsPage({
       );
     } finally {
       setUpdating(false);
+    }
+  }
+
+  async function toggleTagPrinting(enabled: boolean) {
+    if (!order) return;
+
+    try {
+      setError("");
+
+      const response = await fetch(`/api/orders/${order.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tagPrintingEnabled: enabled }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.details || data?.error || "Failed to update tag printing"
+        );
+      }
+
+      setOrder(data);
+    } catch (err) {
+      console.error("Toggle tag printing error:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to update tag printing"
+      );
     }
   }
 
@@ -561,19 +599,48 @@ export default function OrderDetailsPage({
         </div>
 
 
-        {/* PRINT BUTTON */}
+        {/* PRINT BUTTONS */}
 
-        <button
-          onClick={() =>
-            window.open(
-              `/orders/${order.id}/print`,
-              "_blank"
-            )
-          }
-          className="rounded-lg border border-gray-300 bg-white px-5 py-3 font-medium hover:bg-gray-50"
-        >
-          🖨️ Print Ticket
-        </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex gap-3">
+            <button
+              onClick={() =>
+                window.open(
+                  `/orders/${order.id}/print`,
+                  "_blank"
+                )
+              }
+              className="rounded-lg border border-gray-300 bg-white px-5 py-3 font-medium hover:bg-gray-50"
+            >
+              🖨️ Print Ticket
+            </button>
+
+            <button
+              onClick={() =>
+                window.open(
+                  `/orders/${order.id}/tags`,
+                  "_blank"
+                )
+              }
+              className="rounded-lg border border-gray-300 bg-white px-5 py-3 font-medium hover:bg-gray-50"
+            >
+              🏷️ Print Garment Tags
+            </button>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-gray-500">
+            <input
+              type="checkbox"
+              checked={order.tagPrintingEnabled}
+              onChange={(e) => toggleTagPrinting(e.target.checked)}
+            />
+            Print Garment Tags
+            <span className="text-gray-400">
+              · Garment Tags:{" "}
+              {order.garments.reduce((sum, g) => sum + g.quantity, 0)}
+            </span>
+          </label>
+        </div>
 
       </div>
 
@@ -1081,7 +1148,7 @@ export default function OrderDetailsPage({
                     </button>
                   </div>
 
-                  <div className="md:col-span-12">
+                  <div className="md:col-span-6">
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -1095,6 +1162,23 @@ export default function OrderDetailsPage({
                         }
                       />
                       20% Prepay Discount
+                    </label>
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={garment.printTag}
+                        onChange={(e) =>
+                          updateEditGarment(
+                            index,
+                            "printTag",
+                            e.target.checked
+                          )
+                        }
+                      />
+                      Print Tag
                     </label>
                   </div>
 
@@ -1201,6 +1285,11 @@ export default function OrderDetailsPage({
                         {garment.prepayDiscount && (
                           <div className="text-xs font-normal text-green-700 mt-0.5">
                             20% Prepay Discount
+                          </div>
+                        )}
+                        {!garment.printTag && (
+                          <div className="text-xs font-normal text-gray-400 mt-0.5">
+                            Tag printing off
                           </div>
                         )}
                       </td>

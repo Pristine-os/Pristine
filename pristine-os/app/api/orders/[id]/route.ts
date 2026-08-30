@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { summarizePayments } from "@/lib/payments";
+import { syncGarmentTags } from "@/lib/garmentTags";
 
 type RouteContext = {
   params: Promise<{
@@ -10,11 +11,13 @@ type RouteContext = {
 };
 
 type GarmentLine = {
+  id?: string;
   name: string;
   service: string;
   quantity: number;
   price: number;
   prepayDiscount: boolean;
+  printTag: boolean;
 };
 
 function round2(value: number): number {
@@ -24,8 +27,15 @@ function round2(value: number): number {
 // Strict on purpose: unlike order creation, this path can shrink the
 // total on an order that already has money against it, so every line
 // is validated server-side rather than defaulted/coerced.
+//
+// `validGarmentIds` is the authoritative set of garment IDs that
+// actually belong to THIS org-scoped order — never derived from the
+// request itself. A line naming an id outside that set (forged, or
+// belonging to another order/organization) fails the whole request
+// before any write happens.
 function parseGarmentLines(
-  raw: unknown
+  raw: unknown,
+  validGarmentIds: Set<string>
 ): { lines: GarmentLine[] } | { error: string } {
   if (!Array.isArray(raw) || raw.length === 0) {
     return { error: "An order must have at least one garment." };
@@ -39,6 +49,18 @@ function parseGarmentLines(
     }
 
     const record = item as Record<string, unknown>;
+
+    const id =
+      typeof record.id === "string" && record.id.trim()
+        ? record.id.trim()
+        : undefined;
+
+    if (id !== undefined && !validGarmentIds.has(id)) {
+      return {
+        error:
+          "One or more garment lines reference a garment that doesn't belong to this order.",
+      };
+    }
 
     const name =
       typeof record.name === "string" ? record.name.trim() : "";
@@ -78,7 +100,17 @@ function parseGarmentLines(
       };
     }
 
-    lines.push({ name, service, quantity, price, prepayDiscount });
+    // Also pure notation from the financial engine's point of view —
+    // it only ever decides whether tags get printed, never price/total.
+    const printTag = record.printTag === undefined ? true : record.printTag;
+
+    if (typeof printTag !== "boolean") {
+      return {
+        error: `"Print Tag" for "${name}" must be true or false.`,
+      };
+    }
+
+    lines.push({ id, name, service, quantity, price, prepayDiscount, printTag });
   }
 
   return { lines };
@@ -199,7 +231,9 @@ export async function PATCH(
     // organizationId is never trusted from the request body — access is
     // gated entirely through this org-scoped lookup, and payments are
     // fetched here (not re-queried later) so the amountPaid this request
-    // reasons about can't drift from what it actually enforces.
+    // reasons about can't drift from what it actually enforces. Garments
+    // are fetched with their tags so the diff-based sync below has the
+    // authoritative id set and current tag counts to work from.
     const existingOrder =
       await prisma.order.findFirst({
         where: {
@@ -209,6 +243,9 @@ export async function PATCH(
         },
         include: {
           payments: true,
+          garments: {
+            include: { tags: true },
+          },
         },
       });
 
@@ -216,6 +253,16 @@ export async function PATCH(
       return Response.json(
         { error: "Order not found" },
         { status: 404 }
+      );
+    }
+
+    if (
+      body.tagPrintingEnabled !== undefined &&
+      typeof body.tagPrintingEnabled !== "boolean"
+    ) {
+      return Response.json(
+        { error: "tagPrintingEnabled must be true or false." },
+        { status: 400 }
       );
     }
 
@@ -242,7 +289,11 @@ export async function PATCH(
     let newTotal: number | undefined;
 
     if (body.garments !== undefined) {
-      const parsed = parseGarmentLines(body.garments);
+      const validGarmentIds = new Set(
+        existingOrder.garments.map((garment) => garment.id)
+      );
+
+      const parsed = parseGarmentLines(body.garments, validGarmentIds);
 
       if ("error" in parsed) {
         return Response.json(
@@ -272,18 +323,78 @@ export async function PATCH(
       }
     }
 
-    // Garment replacement and the total update either both land or
-    // neither does — no partially-updated order on failure.
+    // Garment sync, tag sync, and the total update either all land or
+    // none does — no partially-updated order on failure. Existing
+    // garment rows are updated in place (never deleted+recreated) so
+    // their id — and therefore their GarmentTag identities — survive
+    // price/service/quantity/print-preference edits untouched.
     const order = await prisma.$transaction(async (tx) => {
       if (garmentLines) {
-        await tx.garment.deleteMany({ where: { orderId: id } });
+        const existingById = new Map(
+          existingOrder.garments.map((garment) => [garment.id, garment])
+        );
+        const incomingIds = new Set(
+          garmentLines
+            .filter((line) => line.id !== undefined)
+            .map((line) => line.id as string)
+        );
 
-        await tx.garment.createMany({
-          data: garmentLines.map((line) => ({
-            ...line,
-            orderId: id,
-          })),
-        });
+        // Lines the employee removed entirely — no scan/production
+        // history exists yet, so their tags are simply retired.
+        for (const garment of existingOrder.garments) {
+          if (!incomingIds.has(garment.id)) {
+            await tx.garmentTag.deleteMany({
+              where: { garmentId: garment.id },
+            });
+            await tx.garment.delete({ where: { id: garment.id } });
+          }
+        }
+
+        for (const line of garmentLines) {
+          if (line.id) {
+            const existingGarment = existingById.get(line.id)!;
+
+            await tx.garment.update({
+              where: { id: line.id },
+              data: {
+                name: line.name,
+                service: line.service,
+                quantity: line.quantity,
+                price: line.price,
+                prepayDiscount: line.prepayDiscount,
+                printTag: line.printTag,
+              },
+            });
+
+            await syncGarmentTags(tx, {
+              orderId: id,
+              orderNumber: existingOrder.orderNumber,
+              garmentId: line.id,
+              quantity: line.quantity,
+              currentTags: existingGarment.tags,
+            });
+          } else {
+            const created = await tx.garment.create({
+              data: {
+                name: line.name,
+                service: line.service,
+                quantity: line.quantity,
+                price: line.price,
+                prepayDiscount: line.prepayDiscount,
+                printTag: line.printTag,
+                orderId: id,
+              },
+            });
+
+            await syncGarmentTags(tx, {
+              orderId: id,
+              orderNumber: existingOrder.orderNumber,
+              garmentId: created.id,
+              quantity: line.quantity,
+              currentTags: [],
+            });
+          }
+        }
       }
 
       return tx.order.update({
@@ -291,6 +402,9 @@ export async function PATCH(
         data: {
           ...(body.status ? { status: body.status } : {}),
           ...(newTotal !== undefined ? { total: newTotal } : {}),
+          ...(typeof body.tagPrintingEnabled === "boolean"
+            ? { tagPrintingEnabled: body.tagPrintingEnabled }
+            : {}),
         },
         include: {
           customer: true,

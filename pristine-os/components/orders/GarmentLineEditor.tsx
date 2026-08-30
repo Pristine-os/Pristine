@@ -136,7 +136,7 @@ export default function GarmentLineEditor({
             </div>
 
             {/* PREPAY DISCOUNT NOTATION */}
-            <div className="md:col-span-12">
+            <div className="md:col-span-6">
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -146,6 +146,20 @@ export default function GarmentLineEditor({
                   }
                 />
                 20% Prepay Discount
+              </label>
+            </div>
+
+            {/* PRINT TAG PREFERENCE */}
+            <div className="md:col-span-6">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={garment.printTag}
+                  onChange={(event) =>
+                    onUpdate(index, "printTag", event.target.checked)
+                  }
+                />
+                Print Tag
               </label>
             </div>
           </div>

@@ -43,14 +43,16 @@ model Customer {
 }
 
 model Order {
-  id             String   @id @default(cuid())
-  orderNumber    String   @unique
-  status         String   @default("RECEIVED")
-  customerId     String
-  organizationId String
-  total          Float    @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  orderNumber        String   @unique
+  status             String   @default("RECEIVED")
+  customerId         String
+  organizationId     String
+  total              Float    @default(0)
+  tagPrintingEnabled Boolean  @default(true)
+  nextTagNumber      Int      @default(1)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   customer     Customer     @relation(fields: [customerId], references: [id])
   organization Organization @relation(fields: [organizationId], references: [id])
@@ -65,10 +67,24 @@ model Garment {
   service        String
   price          Float    @default(0)
   prepayDiscount Boolean  @default(false)
+  printTag       Boolean  @default(true)
   orderId        String
   createdAt      DateTime @default(now())
 
-  order Order @relation(fields: [orderId], references: [id])
+  order Order        @relation(fields: [orderId], references: [id])
+  tags  GarmentTag[]
+}
+
+model GarmentTag {
+  id        String   @id @default(cuid())
+  garmentId String
+  tagNumber String   @unique
+  sequence  Int
+  createdAt DateTime @default(now())
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+
+  @@unique([garmentId, sequence])
 }
 
 model Payment {

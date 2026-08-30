@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { syncGarmentTags } from "@/lib/garmentTags";
 
 export async function GET() {
   try {
@@ -167,9 +168,16 @@ export async function POST(
             // Notation only — never participates in price/total math.
             prepayDiscount:
               garment.prepayDiscount === true,
+
+            // Default-on: tags are eligible unless explicitly turned off.
+            printTag:
+              garment.printTag !== false,
           };
         }
       );
+
+    // Order-level master switch — default-on, explicit opt-out.
+    const tagPrintingEnabled = body.tagPrintingEnabled !== false;
 
 
     /*
@@ -210,38 +218,47 @@ export async function POST(
 
 
     /*
-     * Create order and
-     * garments together.
+     * Create the order, its garments, and one persistent GarmentTag
+     * per physical unit of quantity — all inside one transaction so an
+     * order can never exist without its tags (or vice versa).
      */
 
-    const order =
-      await prisma.order.create({
+    const order = await prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
         data: {
           orderNumber,
-
-          status:
-            body.status ||
-            "RECEIVED",
-
-          customerId:
-            body.customerId,
-
-          organizationId:
-            session.user.organizationId,
-
+          status: body.status || "RECEIVED",
+          customerId: body.customerId,
+          organizationId: session.user.organizationId,
           total,
-
+          tagPrintingEnabled,
           garments: {
-            create:
-              garments,
+            create: garments,
           },
         },
+        include: {
+          garments: true,
+        },
+      });
 
+      for (const garment of created.garments) {
+        await syncGarmentTags(tx, {
+          orderId: created.id,
+          orderNumber: created.orderNumber,
+          garmentId: garment.id,
+          quantity: garment.quantity,
+          currentTags: [],
+        });
+      }
+
+      return tx.order.findUniqueOrThrow({
+        where: { id: created.id },
         include: {
           customer: true,
           garments: true,
         },
       });
+    });
 
 
     console.log(
