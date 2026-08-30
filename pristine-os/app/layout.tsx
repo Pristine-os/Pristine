@@ -1,6 +1,7 @@
 import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
+import GlobalSearch from "@/components/search/GlobalSearch";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -69,10 +70,18 @@ export default function RootLayout({
             style={{
               flex: 1,
               background: "#f3f4f6",
-              padding: "10px",
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 0,
             }}
           >
-            {children}
+            <div className="border-b bg-white px-4 py-3 flex justify-center">
+              <GlobalSearch />
+            </div>
+
+            <div style={{ flex: 1, padding: "10px" }}>
+              {children}
+            </div>
           </main>
         </div>
       </body>
