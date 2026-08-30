@@ -17,6 +17,7 @@ type BoardOrder = {
   physicalGarmentCount: number;
   totalTags: number;
   tagPrintingEnabled: boolean;
+  rack: { id: string; name: string } | null;
   paymentSummary: {
     amountDue: number;
     amountPaid: number;
@@ -263,6 +264,20 @@ export default function ProductionBoardPage() {
                             {new Date(order.createdAt).toLocaleString()}
                           </span>
                         </div>
+
+                        {order.status === "READY" && (
+                          <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
+                            <span>
+                              Rack: {order.rack ? order.rack.name : "Not Assigned"}
+                            </span>
+                            <a
+                              href={`/rack-assignment?orderId=${order.id}`}
+                              className="font-medium text-blue-600 hover:text-blue-800"
+                            >
+                              Assign Rack
+                            </a>
+                          </div>
+                        )}
 
                         <div className="flex items-center gap-3">
                           {order.status === "RECEIVED" && (

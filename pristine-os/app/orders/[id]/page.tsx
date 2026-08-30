@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 
 type Customer = {
   id: string;
@@ -69,7 +69,10 @@ type Order = {
   garments: Garment[];
   payments: Payment[];
   paymentSummary: PaymentSummary;
+  rack: { id: string; name: string; active: boolean } | null;
 };
+
+type RackOption = { id: string; name: string; active: boolean };
 
 const statuses = [
   "RECEIVED",
@@ -143,6 +146,61 @@ export default function OrderDetailsPage({
 
   const [editError, setEditError] =
     useState("");
+
+  const [rackOptions, setRackOptions] = useState<RackOption[]>([]);
+  const [changingRack, setChangingRack] = useState(false);
+  const [rackSelection, setRackSelection] = useState("");
+  const [rackUpdating, setRackUpdating] = useState(false);
+  const [rackError, setRackError] = useState("");
+  const rackUpdateRef = useRef(false);
+
+  useEffect(() => {
+    fetch("/api/racks", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) =>
+        setRackOptions((data.racks || []).filter((r: RackOption) => r.active))
+      )
+      .catch((err) => console.error("Failed to load racks:", err));
+  }, []);
+
+  function startChangeRack() {
+    setRackSelection(order?.rack?.id || "");
+    setRackError("");
+    setChangingRack(true);
+  }
+
+  async function saveRackSelection() {
+    if (!order || rackUpdateRef.current) return;
+
+    rackUpdateRef.current = true;
+    setRackUpdating(true);
+    setRackError("");
+
+    try {
+      const response = await fetch(`/api/orders/${order.id}/rack`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rackId: rackSelection || null,
+          expectedCurrentRackId: order.rack?.id ?? null,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to update rack");
+      }
+
+      setOrder({ ...order, rack: data.rack });
+      setChangingRack(false);
+    } catch (err) {
+      setRackError(err instanceof Error ? err.message : "Failed to update rack");
+    } finally {
+      rackUpdateRef.current = false;
+      setRackUpdating(false);
+    }
+  }
 
   async function loadPricing() {
     try {
@@ -769,6 +827,74 @@ export default function OrderDetailsPage({
 
         </div>
 
+      </div>
+
+      {/* RACK */}
+
+      <div className="mb-8 rounded-xl border bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-bold">Rack</h2>
+
+          {!changingRack && (
+            <div className="flex items-center gap-3">
+              <a
+                href={`/rack-assignment?orderId=${order.id}`}
+                className="text-sm font-medium text-blue-600 hover:text-blue-800"
+              >
+                Scan/Assign Rack
+              </a>
+              <button
+                onClick={startChangeRack}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50"
+              >
+                Change
+              </button>
+            </div>
+          )}
+        </div>
+
+        {!changingRack ? (
+          <div className="text-xl font-bold">
+            {order.rack ? order.rack.name : "Not Assigned"}
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center gap-3">
+              <select
+                value={rackSelection}
+                onChange={(e) => setRackSelection(e.target.value)}
+                className="rounded-lg border px-3 py-2 bg-white"
+              >
+                <option value="">Not Assigned</option>
+                {rackOptions.map((rack) => (
+                  <option key={rack.id} value={rack.id}>
+                    {rack.name}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={saveRackSelection}
+                disabled={rackUpdating}
+                className="rounded-lg bg-black px-5 py-2 text-white font-medium hover:bg-gray-800 disabled:opacity-50"
+              >
+                {rackUpdating ? "Saving..." : "Save"}
+              </button>
+
+              <button
+                onClick={() => setChangingRack(false)}
+                disabled={rackUpdating}
+                className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+
+            {rackError && (
+              <div className="mt-3 text-sm text-red-700">{rackError}</div>
+            )}
+          </div>
+        )}
       </div>
 
 

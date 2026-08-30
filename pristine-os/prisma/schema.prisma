@@ -15,6 +15,7 @@ model Organization {
   orders    Order[]
   users     User[]
   prices    Price[]
+  racks     Rack[]
 }
 
 model User {
@@ -51,11 +52,13 @@ model Order {
   total              Float    @default(0)
   tagPrintingEnabled Boolean  @default(true)
   nextTagNumber      Int      @default(1)
+  rackId             String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   customer     Customer     @relation(fields: [customerId], references: [id])
   organization Organization @relation(fields: [organizationId], references: [id])
+  rack         Rack?        @relation(fields: [rackId], references: [id], onDelete: SetNull)
   garments     Garment[]
   payments     Payment[]
 }
@@ -112,4 +115,20 @@ model Price {
   organization Organization @relation(fields: [organizationId], references: [id])
 
   @@unique([organizationId, garmentType, service])
+}
+
+model Rack {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  barcodeValue   String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  orders       Order[]
+
+  @@unique([organizationId, barcodeValue])
+  @@unique([organizationId, name])
 }

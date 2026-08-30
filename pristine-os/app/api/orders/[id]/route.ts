@@ -148,6 +148,7 @@ export async function GET(
         customer: true,
         garments: true,
         organization: true,
+        rack: { select: { id: true, name: true, active: true } },
         payments: {
           orderBy: { createdAt: "desc" },
         },
@@ -401,6 +402,11 @@ export async function PATCH(
         where: { id },
         data: {
           ...(body.status ? { status: body.status } : {}),
+          // Order.rackId means "current physical storage location" —
+          // once the customer picks up the garments there is no current
+          // location, so clear it in the same transaction as the status
+          // change. Never preserved for history (see project decision).
+          ...(body.status === "PICKED_UP" ? { rackId: null } : {}),
           ...(newTotal !== undefined ? { total: newTotal } : {}),
           ...(typeof body.tagPrintingEnabled === "boolean"
             ? { tagPrintingEnabled: body.tagPrintingEnabled }
@@ -410,6 +416,7 @@ export async function PATCH(
           customer: true,
           garments: true,
           organization: true,
+          rack: { select: { id: true, name: true, active: true } },
           payments: {
             orderBy: { createdAt: "desc" },
           },

@@ -37,6 +37,7 @@ export async function GET() {
             _count: { select: { tags: true } },
           },
         },
+        rack: { select: { id: true, name: true } },
         payments: true,
       },
     });
@@ -65,6 +66,7 @@ export async function GET() {
         physicalGarmentCount,
         totalTags,
         tagPrintingEnabled: order.tagPrintingEnabled,
+        rack: order.rack,
         paymentSummary: summarizePayments(order.total, order.payments),
       };
     });

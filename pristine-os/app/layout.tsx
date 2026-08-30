@@ -45,6 +45,12 @@ export default function RootLayout({
               <a href="/production" style={{ color: "white", textDecoration: "none", fontWeight: "bold" }}>
                 Production
               </a>
+              <a href="/rack-assignment" style={{ color: "white", textDecoration: "none", fontWeight: "bold" }}>
+                Rack Assignment
+              </a>
+              <a href="/racks" style={{ color: "white", textDecoration: "none" }}>
+                Racks
+              </a>
               <a href="/dashboard" style={{ color: "white", textDecoration: "none" }}>
                 Dashboard
               </a>

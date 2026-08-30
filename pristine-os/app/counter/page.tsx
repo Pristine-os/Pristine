@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import GarmentLineEditor from "@/components/orders/GarmentLineEditor";
+import ScanInput from "@/components/scan/ScanInput";
 import {
   blankGarmentLine,
   calculateGarmentLinesTotal,
@@ -83,6 +84,36 @@ export default function CounterPage() {
   const [stage, setStage] = useState<"search" | "building" | "created">(
     "search"
   );
+
+  // ---- Scan Existing Order (separate mode from new-order creation) ----
+  const [showScanExisting, setShowScanExisting] = useState(false);
+  const [scanExistingError, setScanExistingError] = useState("");
+  const [scanExistingLoading, setScanExistingLoading] = useState(false);
+
+  async function handleScanExistingOrder(code: string) {
+    setScanExistingLoading(true);
+    setScanExistingError("");
+
+    try {
+      const response = await fetch(
+        `/api/orders/lookup?code=${encodeURIComponent(code)}`,
+        { cache: "no-store" }
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Order not found");
+      }
+
+      window.location.href = `/orders/${data.id}`;
+    } catch (err) {
+      setScanExistingError(
+        err instanceof Error ? err.message : "Order not found"
+      );
+    } finally {
+      setScanExistingLoading(false);
+    }
+  }
 
   // ---- Step 1: find customer ----
   const [query, setQuery] = useState("");
@@ -505,6 +536,46 @@ export default function CounterPage() {
 
       {/* ============ STAGE: SEARCH ============ */}
       {stage === "search" && (
+        <div>
+          <div className="mb-6 rounded-xl border bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium">
+                Scan Existing Order
+              </label>
+
+              <button
+                onClick={() => {
+                  setShowScanExisting(!showScanExisting);
+                  setScanExistingError("");
+                }}
+                className="text-sm font-medium text-blue-600 hover:text-blue-800"
+              >
+                {showScanExisting ? "Hide" : "Scan an Order"}
+              </button>
+            </div>
+
+            {showScanExisting && (
+              <div className="mt-3">
+                <ScanInput
+                  placeholder="Scan or type invoice number, then Enter"
+                  disabled={scanExistingLoading}
+                  onScan={handleScanExistingOrder}
+                  autoFocus
+                />
+
+                {scanExistingLoading && (
+                  <div className="mt-2 text-sm text-gray-500">Looking up order...</div>
+                )}
+
+                {scanExistingError && (
+                  <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    {scanExistingError}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
         <div className="rounded-xl border bg-white p-6 shadow-sm">
           <label className="block text-sm font-medium mb-2">
             Find Customer
@@ -670,6 +741,7 @@ export default function CounterPage() {
               </div>
             </div>
           )}
+        </div>
         </div>
       )}
 

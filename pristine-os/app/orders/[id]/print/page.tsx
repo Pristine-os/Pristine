@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import CodeBarcode from "@/components/barcode/CodeBarcode";
 
 type Customer = {
   firstName: string;
@@ -208,6 +209,13 @@ export default function PrintOrderPage({
                 order.createdAt
               ).toLocaleString()}
             </p>
+
+            <div className="mt-4 flex flex-col items-center">
+              <CodeBarcode value={order.orderNumber} height={45} />
+              <p className="text-sm font-mono tracking-wide mt-1">
+                {order.orderNumber}
+              </p>
+            </div>
 
           </div>
 
