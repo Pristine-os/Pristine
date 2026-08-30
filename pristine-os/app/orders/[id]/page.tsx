@@ -18,6 +18,25 @@ type Garment = {
   price?: number;
 };
 
+type EditableGarment = {
+  name: string;
+  service: string;
+  quantity: number;
+  price: number;
+};
+
+type PriceEntry = {
+  garmentType: string;
+  service: string;
+  price: number;
+};
+
+type PricingCatalog = {
+  garmentTypes: string[];
+  services: string[];
+  prices: PriceEntry[];
+};
+
 type Payment = {
   id: string;
   amount: number;
@@ -103,6 +122,175 @@ export default function OrderDetailsPage({
 
   const [paymentError, setPaymentError] =
     useState("");
+
+  const [catalog, setCatalog] =
+    useState<PricingCatalog | null>(null);
+
+  const [editing, setEditing] =
+    useState(false);
+
+  const [editGarments, setEditGarments] =
+    useState<EditableGarment[]>([]);
+
+  const [savingEdit, setSavingEdit] =
+    useState(false);
+
+  const [editError, setEditError] =
+    useState("");
+
+  async function loadPricing() {
+    try {
+      const response = await fetch("/api/pricing", {
+        cache: "no-store",
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setCatalog(data);
+      }
+    } catch (error) {
+      console.error("Failed to load pricing:", error);
+    }
+  }
+
+  useEffect(() => {
+    loadPricing();
+  }, []);
+
+  function lookupPrice(garmentType: string, service: string): number {
+    const match = catalog?.prices.find(
+      (entry) =>
+        entry.garmentType === garmentType && entry.service === service
+    );
+
+    return match ? match.price : 0;
+  }
+
+  function startEditing() {
+    if (!order) return;
+
+    setEditError("");
+
+    setEditGarments(
+      order.garments.map((garment) => ({
+        name: garment.name,
+        service: garment.service,
+        quantity: garment.quantity,
+        price: Number(garment.price || 0),
+      }))
+    );
+
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setEditError("");
+    setEditGarments([]);
+  }
+
+  function addEditGarment() {
+    const name = catalog?.garmentTypes[0] || "";
+    const service = catalog?.services[0] || "";
+
+    setEditGarments((current) => [
+      ...current,
+      {
+        name,
+        service,
+        quantity: 1,
+        price: lookupPrice(name, service),
+      },
+    ]);
+  }
+
+  function removeEditGarment(index: number) {
+    if (editGarments.length === 1) return;
+
+    setEditGarments((current) =>
+      current.filter((_, i) => i !== index)
+    );
+  }
+
+  function updateEditGarment(
+    index: number,
+    field: keyof EditableGarment,
+    value: string | number
+  ) {
+    setEditGarments((current) =>
+      current.map((garment, i) => {
+        if (i !== index) return garment;
+
+        const updated = { ...garment, [field]: value };
+
+        // Re-price only when the garment/service selection changes —
+        // an already-loaded line's price never shifts just because the
+        // catalog changed, matching the create-order page's behavior.
+        if (field === "name" || field === "service") {
+          updated.price = lookupPrice(updated.name, updated.service);
+        }
+
+        return updated;
+      })
+    );
+  }
+
+  const editTotal = editGarments.reduce(
+    (sum, garment) =>
+      sum + Number(garment.quantity) * Number(garment.price),
+    0
+  );
+
+  async function saveEdit() {
+    if (!order) return;
+
+    try {
+      setEditError("");
+      setSavingEdit(true);
+
+      const response = await fetch(`/api/orders/${order.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          garments: editGarments.map((garment) => ({
+            name: garment.name.trim(),
+            service: garment.service,
+            quantity: Number(garment.quantity),
+            price: Number(garment.price),
+          })),
+        }),
+      });
+
+      const text = await response.text();
+      let data: any;
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(
+          `Update API returned invalid JSON. HTTP ${response.status}`
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data?.details || data?.error || "Failed to save changes"
+        );
+      }
+
+      setOrder(data);
+      setEditing(false);
+      setEditGarments([]);
+    } catch (error) {
+      console.error("Save edit error:", error);
+      setEditError(
+        error instanceof Error ? error.message : "Failed to save changes"
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   async function loadOrder() {
     try {
@@ -749,15 +937,190 @@ export default function OrderDetailsPage({
 
       <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
 
-        <div className="p-6 border-b">
+        <div className="p-6 border-b flex items-center justify-between">
 
           <h2 className="text-lg font-bold">
             Garments
           </h2>
 
+          {!editing && (
+            <button
+              onClick={startEditing}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50"
+            >
+              Edit Order
+            </button>
+          )}
+
         </div>
 
-        {order.garments?.length ? (
+        {editing && (
+
+          <div className="p-6 border-b bg-gray-50">
+
+            {editError && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {editError}
+              </div>
+            )}
+
+            <div className="space-y-3">
+
+              {editGarments.map((garment, index) => (
+
+                <div
+                  key={index}
+                  className="grid grid-cols-1 md:grid-cols-12 gap-3 rounded-lg border bg-white p-4"
+                >
+
+                  <div className="md:col-span-4">
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Garment
+                    </label>
+                    <select
+                      value={garment.name}
+                      onChange={(e) =>
+                        updateEditGarment(index, "name", e.target.value)
+                      }
+                      className="w-full rounded-lg border px-3 py-2 bg-white"
+                    >
+                      {!catalog?.garmentTypes.includes(garment.name) && (
+                        <option value={garment.name}>{garment.name}</option>
+                      )}
+
+                      {(catalog?.garmentTypes || []).map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Service
+                    </label>
+                    <select
+                      value={garment.service}
+                      onChange={(e) =>
+                        updateEditGarment(index, "service", e.target.value)
+                      }
+                      className="w-full rounded-lg border px-3 py-2 bg-white"
+                    >
+                      {!catalog?.services.includes(garment.service) && (
+                        <option value={garment.service}>
+                          {garment.service}
+                        </option>
+                      )}
+
+                      {(catalog?.services || []).map((service) => (
+                        <option key={service} value={service}>
+                          {service}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Qty
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={garment.quantity}
+                      onChange={(e) =>
+                        updateEditGarment(
+                          index,
+                          "quantity",
+                          Math.max(1, Math.round(Number(e.target.value) || 1))
+                        )
+                      }
+                      className="w-full rounded-lg border px-3 py-2"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Price
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-gray-500">
+                        $
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={garment.price}
+                        onChange={(e) =>
+                          updateEditGarment(
+                            index,
+                            "price",
+                            Math.max(0, Number(e.target.value) || 0)
+                          )
+                        }
+                        className="w-full rounded-lg border pl-7 pr-3 py-2"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-1 flex items-end">
+                    <button
+                      type="button"
+                      onClick={() => removeEditGarment(index)}
+                      disabled={editGarments.length === 1}
+                      className="w-full rounded-lg border px-3 py-2 text-red-600 hover:bg-red-50 disabled:opacity-40"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                </div>
+
+              ))}
+
+            </div>
+
+            <div className="mt-4 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={addEditGarment}
+                className="text-sm font-medium text-blue-600 hover:text-blue-800"
+              >
+                + Add Item
+              </button>
+
+              <div className="text-lg font-bold">
+                New Total: ${editTotal.toFixed(2)}
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={cancelEditing}
+                disabled={savingEdit}
+                className="rounded-lg border px-5 py-2 font-medium hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={saveEdit}
+                disabled={savingEdit}
+                className="rounded-lg bg-black px-5 py-2 text-white font-medium hover:bg-gray-800 disabled:opacity-50"
+              >
+                {savingEdit ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+
+          </div>
+
+        )}
+
+        {!editing && order.garments?.length ? (
 
           <table className="w-full">
 
@@ -869,13 +1232,13 @@ export default function OrderDetailsPage({
 
           </table>
 
-        ) : (
+        ) : !editing ? (
 
           <div className="p-8 text-center text-gray-500">
             No garments found.
           </div>
 
-        )}
+        ) : null}
 
       </div>
 

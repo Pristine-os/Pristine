@@ -9,6 +9,69 @@ type RouteContext = {
   }>;
 };
 
+type GarmentLine = {
+  name: string;
+  service: string;
+  quantity: number;
+  price: number;
+};
+
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+// Strict on purpose: unlike order creation, this path can shrink the
+// total on an order that already has money against it, so every line
+// is validated server-side rather than defaulted/coerced.
+function parseGarmentLines(
+  raw: unknown
+): { lines: GarmentLine[] } | { error: string } {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { error: "An order must have at least one garment." };
+  }
+
+  const lines: GarmentLine[] = [];
+
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      return { error: "Each garment line must be an object." };
+    }
+
+    const record = item as Record<string, unknown>;
+
+    const name =
+      typeof record.name === "string" ? record.name.trim() : "";
+    const service =
+      typeof record.service === "string" ? record.service.trim() : "";
+    const quantity = Number(record.quantity);
+    const price = Number(record.price);
+
+    if (!name) {
+      return { error: "Every garment line requires a garment name." };
+    }
+
+    if (!service) {
+      return { error: "Every garment line requires a service." };
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      return {
+        error: `Quantity for "${name}" must be a whole number of at least 1.`,
+      };
+    }
+
+    if (!Number.isFinite(price) || price < 0) {
+      return {
+        error: `Price for "${name}" must be a non-negative number.`,
+      };
+    }
+
+    lines.push({ name, service, quantity, price });
+  }
+
+  return { lines };
+}
+
 export async function GET(
   request: Request,
   context: RouteContext
@@ -121,12 +184,19 @@ export async function PATCH(
       );
     }
 
+    // organizationId is never trusted from the request body — access is
+    // gated entirely through this org-scoped lookup, and payments are
+    // fetched here (not re-queried later) so the amountPaid this request
+    // reasons about can't drift from what it actually enforces.
     const existingOrder =
       await prisma.order.findFirst({
         where: {
           id,
           organizationId:
             session.user.organizationId,
+        },
+        include: {
+          payments: true,
         },
       });
 
@@ -137,23 +207,88 @@ export async function PATCH(
       );
     }
 
-    const order = await prisma.order.update({
-      where: {
-        id,
-      },
-      data: {
-        ...(body.status
-          ? { status: body.status }
-          : {}),
-      },
-      include: {
-        customer: true,
-        garments: true,
-        organization: true,
-        payments: {
-          orderBy: { createdAt: "desc" },
+    const amountPaid = round2(
+      existingOrder.payments.reduce(
+        (sum, payment) => sum + Number(payment.amount),
+        0
+      )
+    );
+
+    // Payments are an immutable ledger — a paid order can't be cancelled
+    // out from under them until a refund/void workflow exists.
+    if (body.status === "CANCELLED" && amountPaid > 0) {
+      return Response.json(
+        {
+          error:
+            "This order has recorded payments and can't be cancelled directly. Refund or void the payments first.",
         },
-      },
+        { status: 400 }
+      );
+    }
+
+    let garmentLines: GarmentLine[] | undefined;
+    let newTotal: number | undefined;
+
+    if (body.garments !== undefined) {
+      const parsed = parseGarmentLines(body.garments);
+
+      if ("error" in parsed) {
+        return Response.json(
+          { error: parsed.error },
+          { status: 400 }
+        );
+      }
+
+      garmentLines = parsed.lines;
+
+      newTotal = round2(
+        garmentLines.reduce(
+          (sum, line) => sum + line.quantity * line.price,
+          0
+        )
+      );
+
+      // Existing payments are immutable, so the total can never drop
+      // below what's already been collected — no automatic refunds.
+      if (newTotal < amountPaid) {
+        return Response.json(
+          {
+            error: `Order total cannot be reduced below the amount already paid ($${amountPaid.toFixed(2)}).`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Garment replacement and the total update either both land or
+    // neither does — no partially-updated order on failure.
+    const order = await prisma.$transaction(async (tx) => {
+      if (garmentLines) {
+        await tx.garment.deleteMany({ where: { orderId: id } });
+
+        await tx.garment.createMany({
+          data: garmentLines.map((line) => ({
+            ...line,
+            orderId: id,
+          })),
+        });
+      }
+
+      return tx.order.update({
+        where: { id },
+        data: {
+          ...(body.status ? { status: body.status } : {}),
+          ...(newTotal !== undefined ? { total: newTotal } : {}),
+        },
+        include: {
+          customer: true,
+          garments: true,
+          organization: true,
+          payments: {
+            orderBy: { createdAt: "desc" },
+          },
+        },
+      });
     });
 
     return Response.json({
