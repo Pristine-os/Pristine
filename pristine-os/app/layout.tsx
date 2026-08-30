@@ -38,6 +38,9 @@ export default function RootLayout({
                 gap: "12px",
               }}
             >
+              <a href="/counter" style={{ color: "white", textDecoration: "none", fontWeight: "bold" }}>
+                Counter
+              </a>
               <a href="/dashboard" style={{ color: "white", textDecoration: "none" }}>
                 Dashboard
               </a>

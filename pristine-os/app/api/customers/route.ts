@@ -50,12 +50,41 @@ export async function POST(request: Request) {
 
   const body = await request.json();
 
+  const firstName = String(body.firstName ?? "").trim();
+  const lastName = String(body.lastName ?? "").trim();
+  const phone = String(body.phone ?? "").trim();
+
+  const emailInput =
+    typeof body.email === "string" ? body.email.trim() : "";
+  const email = emailInput === "" ? null : emailInput;
+
+  if (!firstName || !lastName) {
+    return Response.json(
+      { error: "First and last name are required" },
+      { status: 400 }
+    );
+  }
+
+  if (!phone) {
+    return Response.json(
+      { error: "Phone number is required" },
+      { status: 400 }
+    );
+  }
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return Response.json(
+      { error: "Enter a valid email address" },
+      { status: 400 }
+    );
+  }
+
   const customer = await prisma.customer.create({
     data: {
-      firstName: body.firstName,
-      lastName: body.lastName,
-      phone: body.phone,
-      email: body.email,
+      firstName,
+      lastName,
+      phone,
+      email,
       organizationId: session.user.organizationId,
     },
   });
