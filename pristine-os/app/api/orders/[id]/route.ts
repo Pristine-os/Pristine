@@ -14,6 +14,7 @@ type GarmentLine = {
   service: string;
   quantity: number;
   price: number;
+  prepayDiscount: boolean;
 };
 
 function round2(value: number): number {
@@ -66,7 +67,18 @@ function parseGarmentLines(
       };
     }
 
-    lines.push({ name, service, quantity, price });
+    // Pure notation — validated as a boolean but never fed into any
+    // price/total calculation below.
+    const prepayDiscount =
+      record.prepayDiscount === undefined ? false : record.prepayDiscount;
+
+    if (typeof prepayDiscount !== "boolean") {
+      return {
+        error: `"20% Prepay Discount" for "${name}" must be true or false.`,
+      };
+    }
+
+    lines.push({ name, service, quantity, price, prepayDiscount });
   }
 
   return { lines };

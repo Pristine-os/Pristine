@@ -163,6 +163,10 @@ export async function POST(
                 0,
                 price
               ),
+
+            // Notation only — never participates in price/total math.
+            prepayDiscount:
+              garment.prepayDiscount === true,
           };
         }
       );

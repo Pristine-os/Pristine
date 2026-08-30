@@ -15,6 +15,7 @@ type Garment = {
   service: string;
   quantity: number;
   price: number;
+  prepayDiscount: boolean;
 };
 
 type PriceEntry = {
@@ -79,6 +80,7 @@ export default function OrdersPage() {
         service: "",
         quantity: 1,
         price: 0,
+        prepayDiscount: false,
       },
     ]);
 
@@ -107,6 +109,7 @@ export default function OrdersPage() {
       service,
       quantity: 1,
       price: lookupPrice(name, service),
+      prepayDiscount: false,
     };
   }
 
@@ -268,6 +271,7 @@ export default function OrdersPage() {
                       garmentType &&
                     entry.service === service
                 )?.price || 0,
+                prepayDiscount: false,
               },
             ]
           : current
@@ -327,7 +331,7 @@ export default function OrdersPage() {
   function updateGarment(
     index: number,
     field: keyof Garment,
-    value: string | number
+    value: string | number | boolean
   ) {
     setGarments(
       garments.map((garment, i) => {
@@ -440,6 +444,9 @@ export default function OrdersPage() {
                       Number(
                         garment.price
                       ),
+
+                    prepayDiscount:
+                      garment.prepayDiscount === true,
                   })
                 ),
             }),
@@ -481,6 +488,7 @@ export default function OrdersPage() {
           service: "Dry Clean",
           quantity: 1,
           price: 0,
+          prepayDiscount: false,
         },
       ]);
 
@@ -874,6 +882,26 @@ export default function OrdersPage() {
                         ×
                       </button>
 
+                    </div>
+
+
+                    {/* PREPAY DISCOUNT NOTATION */}
+
+                    <div className="md:col-span-12">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={garment.prepayDiscount}
+                          onChange={(event) =>
+                            updateGarment(
+                              index,
+                              "prepayDiscount",
+                              event.target.checked
+                            )
+                          }
+                        />
+                        20% Prepay Discount
+                      </label>
                     </div>
 
                   </div>

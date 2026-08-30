@@ -16,6 +16,7 @@ type Garment = {
   quantity: number;
   service: string;
   price?: number;
+  prepayDiscount: boolean;
 };
 
 type EditableGarment = {
@@ -23,6 +24,7 @@ type EditableGarment = {
   service: string;
   quantity: number;
   price: number;
+  prepayDiscount: boolean;
 };
 
 type PriceEntry = {
@@ -178,6 +180,7 @@ export default function OrderDetailsPage({
         service: garment.service,
         quantity: garment.quantity,
         price: Number(garment.price || 0),
+        prepayDiscount: garment.prepayDiscount,
       }))
     );
 
@@ -201,6 +204,7 @@ export default function OrderDetailsPage({
         service,
         quantity: 1,
         price: lookupPrice(name, service),
+        prepayDiscount: false,
       },
     ]);
   }
@@ -216,7 +220,7 @@ export default function OrderDetailsPage({
   function updateEditGarment(
     index: number,
     field: keyof EditableGarment,
-    value: string | number
+    value: string | number | boolean
   ) {
     setEditGarments((current) =>
       current.map((garment, i) => {
@@ -258,6 +262,7 @@ export default function OrderDetailsPage({
             service: garment.service,
             quantity: Number(garment.quantity),
             price: Number(garment.price),
+            prepayDiscount: garment.prepayDiscount === true,
           })),
         }),
       });
@@ -1076,6 +1081,23 @@ export default function OrderDetailsPage({
                     </button>
                   </div>
 
+                  <div className="md:col-span-12">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={garment.prepayDiscount}
+                        onChange={(e) =>
+                          updateEditGarment(
+                            index,
+                            "prepayDiscount",
+                            e.target.checked
+                          )
+                        }
+                      />
+                      20% Prepay Discount
+                    </label>
+                  </div>
+
                 </div>
 
               ))}
@@ -1176,6 +1198,11 @@ export default function OrderDetailsPage({
 
                       <td className="p-4 font-medium">
                         {garment.name}
+                        {garment.prepayDiscount && (
+                          <div className="text-xs font-normal text-green-700 mt-0.5">
+                            20% Prepay Discount
+                          </div>
+                        )}
                       </td>
 
                       <td className="p-4">

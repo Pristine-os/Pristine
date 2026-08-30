@@ -59,13 +59,14 @@ model Order {
 }
 
 model Garment {
-  id        String   @id @default(cuid())
-  name      String
-  quantity  Int      @default(1)
-  service   String
-  price     Float    @default(0)
-  orderId   String
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  name           String
+  quantity       Int      @default(1)
+  service        String
+  price          Float    @default(0)
+  prepayDiscount Boolean  @default(false)
+  orderId        String
+  createdAt      DateTime @default(now())
 
   order Order @relation(fields: [orderId], references: [id])
 }

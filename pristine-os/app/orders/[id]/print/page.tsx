@@ -15,6 +15,7 @@ type Garment = {
   quantity: number;
   service: string;
   price?: number;
+  prepayDiscount: boolean;
 };
 
 type Order = {
@@ -281,6 +282,12 @@ export default function PrintOrderPage({
                     <div className="text-sm text-gray-500">
                       {garment.service}
                     </div>
+
+                    {garment.prepayDiscount && (
+                      <div className="text-sm font-medium">
+                        20% Prepay Discount
+                      </div>
+                    )}
 
                   </div>
                 );
