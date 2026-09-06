@@ -2,6 +2,11 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { summarizePayments } from "@/lib/payments";
+import {
+  ensureReadyNotificationIntent,
+  attemptNotificationSend,
+  READY_NOTIFICATION_TYPE,
+} from "@/lib/notifications/service";
 
 type RouteContext = {
   params: Promise<{
@@ -63,15 +68,49 @@ export async function PATCH(request: Request, context: RouteContext) {
     // customer picks up the garments there is no current location, so it
     // clears in this same UPDATE statement rather than a follow-up write.
     // Never preserved for history (see project decision).
-    const result = await prisma.order.updateMany({
-      where: { id, organizationId, status: requiredFrom },
-      data: {
-        status: to,
-        ...(to === "PICKED_UP" ? { rackId: null } : {}),
-      },
+    //
+    // When this transition enters READY, the notification intent is
+    // created in this SAME transaction (ensureReadyNotificationIntent) so
+    // there is never a window where the order is READY without a durable
+    // Notification row. The actual provider dispatch happens afterward,
+    // once this transaction has committed — external delivery must never
+    // be able to roll back a successful status change.
+    const entered = await prisma.$transaction(async (tx) => {
+      const updateResult = await tx.order.updateMany({
+        where: { id, organizationId, status: requiredFrom },
+        data: {
+          status: to,
+          ...(to === "PICKED_UP" ? { rackId: null } : {}),
+        },
+      });
+
+      if (updateResult.count === 0) {
+        return false;
+      }
+
+      if (to === "READY") {
+        const updatedOrder = await tx.order.findFirst({
+          where: { id, organizationId },
+          select: {
+            customer: {
+              select: { id: true, firstName: true, phone: true, email: true },
+            },
+          },
+        });
+
+        if (updatedOrder) {
+          await ensureReadyNotificationIntent(tx, {
+            organizationId,
+            orderId: id,
+            customer: updatedOrder.customer,
+          });
+        }
+      }
+
+      return true;
     });
 
-    if (result.count === 0) {
+    if (!entered) {
       const current = await prisma.order.findFirst({
         where: { id, organizationId },
         select: { status: true },
@@ -90,6 +129,24 @@ export async function PATCH(request: Request, context: RouteContext) {
       );
     }
 
+    // Provider dispatch happens after commit, so a delivery failure never
+    // affects the already-successful status-change response below.
+    if (to === "READY") {
+      const notification = await prisma.notification.findFirst({
+        where: { orderId: id, organizationId, type: READY_NOTIFICATION_TYPE },
+        select: { id: true },
+      });
+
+      if (notification) {
+        await attemptNotificationSend({
+          organizationId,
+          notificationId: notification.id,
+        }).catch((err) => {
+          console.error("READY NOTIFICATION SEND ERROR:", err);
+        });
+      }
+    }
+
     const order = await prisma.order.findFirst({
       where: { id, organizationId },
       include: {
@@ -106,6 +163,10 @@ export async function PATCH(request: Request, context: RouteContext) {
         },
         rack: { select: { id: true, name: true } },
         payments: true,
+        notifications: {
+          where: { type: READY_NOTIFICATION_TYPE },
+          select: { status: true, channel: true },
+        },
       },
     });
 
@@ -138,6 +199,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       tagPrintingEnabled: order.tagPrintingEnabled,
       rack: order.rack,
       paymentSummary: summarizePayments(order.total, order.payments),
+      readyNotification: order.notifications[0] ?? null,
     });
   } catch (error) {
     console.error("PRODUCTION TRANSITION ERROR:", error);

@@ -57,6 +57,18 @@ type PaymentSummary = {
   paymentStatus: "UNPAID" | "PARTIAL" | "PAID";
 };
 
+type ReadyNotification = {
+  id: string;
+  status: "PENDING" | "SENT" | "FAILED" | "NO_CONTACT_METHOD" | "SIMULATED";
+  channel: string;
+  recipient: string;
+  attempts: number;
+  error: string | null;
+  sentAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type Order = {
   id: string;
   orderNumber: string;
@@ -70,7 +82,31 @@ type Order = {
   payments: Payment[];
   paymentSummary: PaymentSummary;
   rack: { id: string; name: string; active: boolean } | null;
+  readyNotification: ReadyNotification | null;
 };
+
+function notificationStatusLabel(status: string) {
+  switch (status) {
+    case "SIMULATED":
+      return "Simulated — no external message sent";
+    case "SENT":
+      return "Sent";
+    case "FAILED":
+      return "Failed";
+    case "NO_CONTACT_METHOD":
+      return "No Contact Method";
+    default:
+      return "Not Sent";
+  }
+}
+
+function notificationBadgeClasses(status: string) {
+  if (status === "SENT") return "bg-green-100 text-green-700";
+  if (status === "SIMULATED") return "bg-blue-100 text-blue-700";
+  if (status === "FAILED") return "bg-red-100 text-red-700";
+  if (status === "NO_CONTACT_METHOD") return "bg-gray-100 text-gray-600";
+  return "bg-yellow-100 text-yellow-700";
+}
 
 type RackOption = { id: string; name: string; active: boolean };
 
@@ -154,6 +190,11 @@ export default function OrderDetailsPage({
   const [rackError, setRackError] = useState("");
   const rackUpdateRef = useRef(false);
 
+  const [sendingNotification, setSendingNotification] = useState(false);
+  const [notificationError, setNotificationError] = useState("");
+  const [showResendConfirm, setShowResendConfirm] = useState(false);
+  const sendingNotificationRef = useRef(false);
+
   useEffect(() => {
     fetch("/api/racks", { cache: "no-store" })
       .then((res) => res.json())
@@ -199,6 +240,39 @@ export default function OrderDetailsPage({
     } finally {
       rackUpdateRef.current = false;
       setRackUpdating(false);
+    }
+  }
+
+  async function sendReadyNotification() {
+    if (!order || sendingNotificationRef.current) return;
+
+    sendingNotificationRef.current = true;
+    setSendingNotification(true);
+    setNotificationError("");
+
+    try {
+      const response = await fetch(
+        `/api/orders/${order.id}/notifications/ready`,
+        { method: "POST" }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.details || data?.error || "Failed to send notification"
+        );
+      }
+
+      setOrder({ ...order, readyNotification: data.notification });
+      setShowResendConfirm(false);
+    } catch (err) {
+      setNotificationError(
+        err instanceof Error ? err.message : "Failed to send notification"
+      );
+    } finally {
+      sendingNotificationRef.current = false;
+      setSendingNotification(false);
     }
   }
 
@@ -896,6 +970,131 @@ export default function OrderDetailsPage({
           </div>
         )}
       </div>
+
+
+      {/* READY NOTIFICATION */}
+
+      {(order.status === "READY" ||
+        order.status === "PICKED_UP" ||
+        order.readyNotification) && (
+        <div className="mb-8 rounded-xl border bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold">Ready Notification</h2>
+
+            {order.readyNotification && (
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-medium ${notificationBadgeClasses(
+                  order.readyNotification.status
+                )}`}
+              >
+                {notificationStatusLabel(order.readyNotification.status)}
+              </span>
+            )}
+          </div>
+
+          {!order.readyNotification ? (
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-500">
+                No notification sent yet.
+              </div>
+
+              <button
+                onClick={sendReadyNotification}
+                disabled={sendingNotification}
+                className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+              >
+                {sendingNotification
+                  ? "Sending..."
+                  : "Send Ready Notification"}
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div>
+                  <div className="text-sm text-gray-500">Channel</div>
+                  <div className="font-medium mt-1">
+                    {order.readyNotification.channel === "NONE"
+                      ? "-"
+                      : order.readyNotification.channel}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-sm text-gray-500">Recipient</div>
+                  <div className="font-medium mt-1">
+                    {order.readyNotification.recipient || "-"}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-sm text-gray-500">Attempts</div>
+                  <div className="font-medium mt-1">
+                    {order.readyNotification.attempts}
+                  </div>
+                </div>
+              </div>
+
+              {order.readyNotification.status === "FAILED" &&
+                order.readyNotification.error && (
+                  <div className="mt-3 text-sm text-red-700">
+                    {order.readyNotification.error}
+                  </div>
+                )}
+
+              <div className="mt-5">
+                {order.readyNotification.status === "SENT" ||
+                order.readyNotification.status === "SIMULATED" ? (
+                  showResendConfirm ? (
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm text-gray-700">
+                        This has already been {order.readyNotification.status === "SIMULATED" ? "simulated" : "sent"}. Resend anyway?
+                      </div>
+
+                      <button
+                        onClick={sendReadyNotification}
+                        disabled={sendingNotification}
+                        className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+                      >
+                        {sendingNotification ? "Sending..." : "Confirm Resend"}
+                      </button>
+
+                      <button
+                        onClick={() => setShowResendConfirm(false)}
+                        disabled={sendingNotification}
+                        className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowResendConfirm(true)}
+                      className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50"
+                    >
+                      Resend
+                    </button>
+                  )
+                ) : (
+                  <button
+                    onClick={sendReadyNotification}
+                    disabled={sendingNotification}
+                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {sendingNotification ? "Sending..." : "Retry"}
+                  </button>
+                )}
+              </div>
+
+              {notificationError && (
+                <div className="mt-3 text-sm text-red-700">
+                  {notificationError}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
 
       {/* PAYMENT */}

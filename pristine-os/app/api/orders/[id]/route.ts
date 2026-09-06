@@ -3,6 +3,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { summarizePayments } from "@/lib/payments";
 import { syncGarmentTags } from "@/lib/garmentTags";
+import {
+  ensureReadyNotificationIntent,
+  attemptNotificationSend,
+  READY_NOTIFICATION_TYPE,
+} from "@/lib/notifications/service";
 
 type RouteContext = {
   params: Promise<{
@@ -152,6 +157,9 @@ export async function GET(
         payments: {
           orderBy: { createdAt: "desc" },
         },
+        notifications: {
+          where: { type: READY_NOTIFICATION_TYPE },
+        },
       },
     });
 
@@ -166,9 +174,12 @@ export async function GET(
       );
     }
 
+    const { notifications, ...orderFields } = order;
+
     return Response.json({
-      ...order,
+      ...orderFields,
       paymentSummary: summarizePayments(order.total, order.payments),
+      readyNotification: notifications[0] ?? null,
     });
   } catch (error) {
     console.error("GET ORDER ERROR:", error);
@@ -247,6 +258,9 @@ export async function PATCH(
           garments: {
             include: { tags: true },
           },
+          customer: {
+            select: { id: true, firstName: true, phone: true, email: true },
+          },
         },
       });
 
@@ -285,6 +299,14 @@ export async function PATCH(
         { status: 400 }
       );
     }
+
+    // Only a genuine entry into READY (order wasn't already READY) queues an
+    // automatic ready notification — this endpoint's free-form status
+    // control can set READY from any prior status (staff corrections), and
+    // that path deserves the same customer notification as the hardened
+    // production transition endpoint. A READY -> READY no-op request (a
+    // retried/duplicate PATCH) never re-queues.
+    const enteringReady = body.status === "READY" && existingOrder.status !== "READY";
 
     let garmentLines: GarmentLine[] | undefined;
     let newTotal: number | undefined;
@@ -398,7 +420,7 @@ export async function PATCH(
         }
       }
 
-      return tx.order.update({
+      const updated = await tx.order.update({
         where: { id },
         data: {
           ...(body.status ? { status: body.status } : {}),
@@ -422,11 +444,55 @@ export async function PATCH(
           },
         },
       });
+
+      // Durable notification intent is created in this SAME transaction as
+      // the status write — see ensureReadyNotificationIntent for why (no
+      // window where READY exists without a Notification row).
+      if (enteringReady) {
+        await ensureReadyNotificationIntent(tx, {
+          organizationId: session.user.organizationId,
+          orderId: id,
+          customer: existingOrder.customer,
+        });
+      }
+
+      return updated;
+    });
+
+    // Provider dispatch happens after commit, so a delivery failure never
+    // affects the already-successful order-update response below.
+    if (enteringReady) {
+      const notification = await prisma.notification.findFirst({
+        where: {
+          orderId: id,
+          organizationId: session.user.organizationId,
+          type: READY_NOTIFICATION_TYPE,
+        },
+        select: { id: true },
+      });
+
+      if (notification) {
+        await attemptNotificationSend({
+          organizationId: session.user.organizationId,
+          notificationId: notification.id,
+        }).catch((err) => {
+          console.error("READY NOTIFICATION SEND ERROR:", err);
+        });
+      }
+    }
+
+    const readyNotification = await prisma.notification.findFirst({
+      where: {
+        orderId: id,
+        organizationId: session.user.organizationId,
+        type: READY_NOTIFICATION_TYPE,
+      },
     });
 
     return Response.json({
       ...order,
       paymentSummary: summarizePayments(order.total, order.payments),
+      readyNotification: readyNotification ?? null,
     });
   } catch (error) {
     console.error("UPDATE ORDER ERROR:", error);

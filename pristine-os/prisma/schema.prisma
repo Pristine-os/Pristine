@@ -11,11 +11,12 @@ model Organization {
   name      String
   createdAt DateTime @default(now())
 
-  customers Customer[]
-  orders    Order[]
-  users     User[]
-  prices    Price[]
-  racks     Rack[]
+  customers     Customer[]
+  orders        Order[]
+  users         User[]
+  prices        Price[]
+  racks         Rack[]
+  notifications Notification[]
 }
 
 model User {
@@ -39,8 +40,9 @@ model Customer {
   organizationId String
   createdAt      DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  orders       Order[]
+  organization  Organization    @relation(fields: [organizationId], references: [id])
+  orders        Order[]
+  notifications Notification[]
 }
 
 model Order {
@@ -56,11 +58,12 @@ model Order {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  customer     Customer     @relation(fields: [customerId], references: [id])
-  organization Organization @relation(fields: [organizationId], references: [id])
-  rack         Rack?        @relation(fields: [rackId], references: [id], onDelete: SetNull)
-  garments     Garment[]
-  payments     Payment[]
+  customer      Customer       @relation(fields: [customerId], references: [id])
+  organization  Organization   @relation(fields: [organizationId], references: [id])
+  rack          Rack?          @relation(fields: [rackId], references: [id], onDelete: SetNull)
+  garments      Garment[]
+  payments      Payment[]
+  notifications Notification[]
 }
 
 model Garment {
@@ -131,4 +134,27 @@ model Rack {
 
   @@unique([organizationId, barcodeValue])
   @@unique([organizationId, name])
+}
+
+model Notification {
+  id             String    @id @default(cuid())
+  organizationId String
+  orderId        String
+  customerId     String
+  type           String
+  channel        String
+  status         String    @default("PENDING")
+  recipient      String
+  attempts       Int       @default(0)
+  error          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  sentAt         DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  order        Order        @relation(fields: [orderId], references: [id])
+  customer     Customer     @relation(fields: [customerId], references: [id])
+
+  @@unique([orderId, type])
+  @@index([customerId])
 }
