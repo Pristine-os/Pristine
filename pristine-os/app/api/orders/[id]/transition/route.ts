@@ -9,13 +9,16 @@ type RouteContext = {
   }>;
 };
 
-// The only transitions the production board is allowed to perform.
-// This is intentionally narrower than the free-form status control on
-// the order detail page (which staff use for corrections) — jumping to
-// PICKED_UP, CANCELLED, or backwards is out of scope here on purpose.
-const PRODUCTION_TRANSITIONS: Record<string, string> = {
+// The only transitions this endpoint is allowed to perform: the
+// production board's forward moves (RECEIVED→PROCESSING→READY) and the
+// pickup counter's checkout (READY→PICKED_UP). This is intentionally
+// narrower than the free-form status control on the order detail page
+// (which staff use for corrections) — jumping statuses, CANCELLED, or
+// moving backwards stays out of scope here on purpose.
+const ALLOWED_TRANSITIONS: Record<string, string> = {
   PROCESSING: "RECEIVED",
   READY: "PROCESSING",
+  PICKED_UP: "READY",
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -38,26 +41,34 @@ export async function PATCH(request: Request, context: RouteContext) {
     const body = await request.json();
     const to = body.to;
 
-    if (typeof to !== "string" || !PRODUCTION_TRANSITIONS[to]) {
+    if (typeof to !== "string" || !ALLOWED_TRANSITIONS[to]) {
       return Response.json(
         {
           error:
-            'Invalid production transition. Expected "to" to be "PROCESSING" or "READY".',
+            'Invalid transition. Expected "to" to be "PROCESSING", "READY", or "PICKED_UP".',
         },
         { status: 400 }
       );
     }
 
-    const requiredFrom = PRODUCTION_TRANSITIONS[to];
+    const requiredFrom = ALLOWED_TRANSITIONS[to];
     const organizationId = session.user.organizationId;
 
     // A single atomic UPDATE ... WHERE status = requiredFrom is a
     // compare-and-swap at the database level — there is no read-then-write
     // gap for two devices to race through. If the row's status already
     // moved (or the order doesn't belong to this org), count is 0.
+    //
+    // Order.rackId means "current physical storage location" — once the
+    // customer picks up the garments there is no current location, so it
+    // clears in this same UPDATE statement rather than a follow-up write.
+    // Never preserved for history (see project decision).
     const result = await prisma.order.updateMany({
       where: { id, organizationId, status: requiredFrom },
-      data: { status: to },
+      data: {
+        status: to,
+        ...(to === "PICKED_UP" ? { rackId: null } : {}),
+      },
     });
 
     if (result.count === 0) {

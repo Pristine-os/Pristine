@@ -1521,17 +1521,26 @@ export default function OrderDetailsPage({
 
         {order.status ===
           "READY" && (
-          <button
-            onClick={() =>
-              updateStatus(
-                "PICKED_UP"
-              )
-            }
-            disabled={updating}
-            className="rounded-lg bg-black px-5 py-3 text-white font-medium"
-          >
-            Mark Picked Up
-          </button>
+          <>
+            <a
+              href={`/pickup?orderId=${order.id}`}
+              className="rounded-lg bg-black px-5 py-3 text-white font-medium"
+            >
+              Open Pickup
+            </a>
+
+            <button
+              onClick={() =>
+                updateStatus(
+                  "PICKED_UP"
+                )
+              }
+              disabled={updating}
+              className="rounded-lg border border-gray-300 bg-white px-5 py-3 font-medium hover:bg-gray-50"
+            >
+              Mark Picked Up
+            </button>
+          </>
         )}
 
       </div>

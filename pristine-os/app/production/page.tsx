@@ -300,6 +300,15 @@ export default function ProductionBoardPage() {
                             </button>
                           )}
 
+                          {order.status === "READY" && (
+                            <a
+                              href={`/pickup?orderId=${order.id}`}
+                              className="flex-1 text-center rounded-lg bg-black px-4 py-3 text-white font-medium hover:bg-gray-800"
+                            >
+                              Open Pickup
+                            </a>
+                          )}
+
                           <a
                             href={`/orders/${order.id}`}
                             className="rounded-lg border border-gray-300 bg-white px-4 py-3 font-medium hover:bg-gray-50"

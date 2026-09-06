@@ -1,7 +1,17 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { PAYMENT_METHODS, summarizePayments } from "@/lib/payments";
+
+// Thrown inside the Serializable transaction below to short-circuit an
+// overpayment attempt — kept distinct from a genuine write conflict so
+// the two can be told apart in the catch block.
+class OverpaymentError extends Error {
+  constructor(public balanceRemaining: number) {
+    super("Amount exceeds remaining balance");
+  }
+}
 
 type RouteContext = {
   params: Promise<{
@@ -131,31 +141,75 @@ export async function POST(
       );
     }
 
-    const existingPayments = await prisma.payment.findMany({
-      where: { orderId: id },
-    });
+    // The balance check and the insert must be read+written as one unit —
+    // otherwise two requests racing on the same order (a double-click, or
+    // two registers) can both read the same "balance remaining" before
+    // either write lands, both pass the check, and together overpay the
+    // order. Serializable isolation makes Postgres detect that overlap
+    // and abort one of the two transactions instead of letting it happen.
+    let payment;
+    let existingPayments;
 
-    const currentSummary = summarizePayments(order.total, existingPayments);
+    try {
+      const result = await prisma.$transaction(
+        async (tx) => {
+          const currentPayments = await tx.payment.findMany({
+            where: { orderId: id },
+          });
 
-    // A cent of floating-point slack avoids rejecting a payment
-    // that exactly clears the balance.
-    if (amount > currentSummary.balanceRemaining + 0.01) {
-      return Response.json(
-        {
-          error: `Amount exceeds remaining balance of $${currentSummary.balanceRemaining.toFixed(2)}`,
+          const currentSummary = summarizePayments(order.total, currentPayments);
+
+          // A cent of floating-point slack avoids rejecting a payment
+          // that exactly clears the balance.
+          if (amount > currentSummary.balanceRemaining + 0.01) {
+            throw new OverpaymentError(currentSummary.balanceRemaining);
+          }
+
+          const created = await tx.payment.create({
+            data: { orderId: id, amount, method, note },
+          });
+
+          return { created, currentPayments };
         },
-        { status: 400 }
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
       );
-    }
 
-    const payment = await prisma.payment.create({
-      data: {
-        orderId: id,
-        amount,
-        method,
-        note,
-      },
-    });
+      payment = result.created;
+      existingPayments = result.currentPayments;
+    } catch (error) {
+      if (error instanceof OverpaymentError) {
+        return Response.json(
+          {
+            error: `Amount exceeds remaining balance of $${error.balanceRemaining.toFixed(2)}`,
+          },
+          { status: 400 }
+        );
+      }
+
+      // Postgres serialization failure (40001) — another request recorded
+      // a payment against this order in the same instant. Depending on
+      // the client/engine this surfaces either as a known Prisma error
+      // (P2034) or as an unknown error whose message names the conflict;
+      // either way, ask the caller to reload and retry rather than
+      // risking a stale balance being used for a second attempt.
+      const isWriteConflict =
+        (error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2034") ||
+        (error instanceof Error &&
+          /TransactionWriteConflict|write conflict/i.test(error.message));
+
+      if (isWriteConflict) {
+        return Response.json(
+          {
+            error:
+              "This order's balance just changed (another payment may have been recorded at the same time). Refresh and try again.",
+          },
+          { status: 409 }
+        );
+      }
+
+      throw error;
+    }
 
     const summary = summarizePayments(order.total, [
       ...existingPayments,

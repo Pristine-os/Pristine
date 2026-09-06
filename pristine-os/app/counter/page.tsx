@@ -543,15 +543,24 @@ export default function CounterPage() {
                 Scan Existing Order
               </label>
 
-              <button
-                onClick={() => {
-                  setShowScanExisting(!showScanExisting);
-                  setScanExistingError("");
-                }}
-                className="text-sm font-medium text-blue-600 hover:text-blue-800"
-              >
-                {showScanExisting ? "Hide" : "Scan an Order"}
-              </button>
+              <div className="flex items-center gap-4">
+                <a
+                  href="/pickup"
+                  className="text-sm font-medium text-blue-600 hover:text-blue-800"
+                >
+                  Go to Pickup
+                </a>
+
+                <button
+                  onClick={() => {
+                    setShowScanExisting(!showScanExisting);
+                    setScanExistingError("");
+                  }}
+                  className="text-sm font-medium text-blue-600 hover:text-blue-800"
+                >
+                  {showScanExisting ? "Hide" : "Scan an Order"}
+                </button>
+              </div>
             </div>
 
             {showScanExisting && (
