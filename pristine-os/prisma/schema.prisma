@@ -6,6 +6,12 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserRole {
+  OWNER
+  MANAGER
+  EMPLOYEE
+}
+
 model Organization {
   id        String   @id @default(cuid())
   name      String
@@ -24,7 +30,8 @@ model User {
   name           String?
   email          String   @unique
   password       String
-  role           String   @default("OWNER")
+  role           UserRole @default(EMPLOYEE)
+  active         Boolean  @default(true)
   organizationId String
   createdAt      DateTime @default(now())
 

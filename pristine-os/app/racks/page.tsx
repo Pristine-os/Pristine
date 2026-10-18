@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type Rack = {
   id: string;
@@ -18,6 +19,10 @@ type RackOrder = {
 };
 
 export default function RacksPage() {
+  const { can } = useCurrentUser();
+  // Rack setup is an approved operational setting (Manager/Owner);
+  // enforced by /api/racks — this only hides the controls.
+  const canManageRacks = can("settings.operational");
   const [racks, setRacks] = useState<Rack[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -222,6 +227,7 @@ export default function RacksPage() {
         </div>
       )}
 
+      {canManageRacks && (
       <div className="mb-6 rounded-xl border bg-white p-5 shadow-sm">
         <label className="block text-sm font-medium mb-2">Add Rack</label>
 
@@ -247,6 +253,7 @@ export default function RacksPage() {
           <div className="mt-3 text-sm text-red-700">{createError}</div>
         )}
       </div>
+      )}
 
       <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
         {racks && racks.length === 0 ? (
@@ -321,7 +328,7 @@ export default function RacksPage() {
                         🖨️ Print Label
                       </a>
 
-                      {renamingId !== rack.id && (
+                      {canManageRacks && renamingId !== rack.id && (
                         <button
                           onClick={() => startRename(rack)}
                           className="text-sm font-medium text-blue-600 hover:text-blue-800"
@@ -330,13 +337,15 @@ export default function RacksPage() {
                         </button>
                       )}
 
-                      <button
-                        onClick={() => toggleActive(rack)}
-                        disabled={busy}
-                        className="text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50"
-                      >
-                        {rack.active ? "Deactivate" : "Activate"}
-                      </button>
+                      {canManageRacks && (
+                        <button
+                          onClick={() => toggleActive(rack)}
+                          disabled={busy}
+                          className="text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50"
+                        >
+                          {rack.active ? "Deactivate" : "Activate"}
+                        </button>
+                      )}
                     </div>
                   </div>
 

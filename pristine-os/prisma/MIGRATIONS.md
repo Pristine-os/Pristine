@@ -60,3 +60,35 @@ development database. Before going to production, set up a clean database
 (`prisma/migrations/`) can be applied from scratch with `prisma migrate deploy`
 and passes without any checksum conflict, and confirm `prisma migrate dev`
 behaves normally there. Do not carry this workaround into production tooling.
+
+## `20261018000000_add_user_roles` (Employee Roles & Permissions)
+
+Converts `User.role` from free-form text to the `UserRole` enum
+(`OWNER` / `MANAGER` / `EMPLOYEE`), changes its default from `OWNER` to
+`EMPLOYEE`, and adds `User.active` (default `true`). Existing accounts keep
+their current role — every account created so far defaulted to `OWNER`, so
+existing logins keep full access.
+
+Applying it to the development database (follow the reviewed path above —
+never `migrate dev`, never reset):
+
+1. Read-only pre-check — every value must be `OWNER`, `MANAGER` or `EMPLOYEE`:
+   ```
+   SELECT role, count(*) FROM "User" GROUP BY role;
+   ```
+   The migration starts with a guard that aborts before changing anything if
+   another value is present. (Prisma does not wrap PostgreSQL migrations in a
+   transaction, so the guard is what keeps a failed run from leaving partial
+   changes.)
+2. Take a backup of the database.
+3. `npx prisma migrate deploy`
+4. `npx prisma migrate status`, then
+   `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script`
+   (expect an empty diff).
+
+Rollback SQL is in the comment at the top of the migration file.
+
+Verified on a throwaway local database only: full history applied from
+scratch with `migrate deploy`; legacy rows (implicit and explicit `OWNER`)
+kept `OWNER`; new rows default to `EMPLOYEE`; post-migration diff empty; a row
+with an invalid role makes the guard abort with the schema left untouched.

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireUser } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 import { summarizePayments } from "@/lib/payments";
 
 function round2(value: number): number {
@@ -9,14 +9,13 @@ function round2(value: number): number {
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requireUser("dashboard.operational");
 
-    if (!session?.user?.organizationId) {
-      return Response.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const organizationId = session.user.organizationId;
 
@@ -149,7 +148,43 @@ export async function GET() {
       )
       .slice(0, 10);
 
+    // Employees get the operational view only: counts and queues, with
+    // every revenue, balance, total and payment figure removed.
+    if (!can(auth.user.role, "reports.financial")) {
+      const operational = (order: {
+        id: string;
+        orderNumber: string;
+        status: string;
+        createdAt: Date;
+        updatedAt: Date;
+        customer: (typeof orderCards)[number]["customer"];
+      }) => ({
+        id: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        customer: order.customer,
+      });
+
+      return Response.json({
+        financial: false,
+        metrics: {
+          ordersToday: ordersCreatedToday.length,
+          ordersReceived: ordersReceived.length,
+          ordersProcessing: ordersProcessing.length,
+          ordersReady: ordersReady.length,
+          ordersPickedUpToday: ordersPickedUpToday.length,
+          customersServedToday,
+        },
+        recentOrders: orderCards.slice(0, 10).map(operational),
+        readyQueue: readyQueue.map(operational),
+        processingQueue: processingQueue.map(operational),
+      });
+    }
+
     return Response.json({
+      financial: true,
       metrics: {
         ordersToday: ordersCreatedToday.length,
         ordersReceived: ordersReceived.length,

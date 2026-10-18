@@ -7,7 +7,8 @@ type OrderCard = {
   id: string;
   orderNumber: string;
   status: string;
-  total: number;
+  // Financial fields are omitted for roles without financial reporting.
+  total?: number;
   createdAt: string;
   updatedAt: string;
   customer: {
@@ -15,7 +16,7 @@ type OrderCard = {
     firstName: string;
     lastName: string;
   };
-  paymentSummary: {
+  paymentSummary?: {
     amountDue: number;
     amountPaid: number;
     balanceRemaining: number;
@@ -33,21 +34,22 @@ type PaymentRow = {
 };
 
 type DashboardData = {
+  financial: boolean;
   metrics: {
     ordersToday: number;
     ordersReceived: number;
     ordersProcessing: number;
     ordersReady: number;
     ordersPickedUpToday: number;
-    revenueToday: number;
-    outstandingBalance: number;
+    revenueToday?: number;
+    outstandingBalance?: number;
     customersServedToday: number;
   };
   recentOrders: OrderCard[];
   readyQueue: OrderCard[];
   processingQueue: OrderCard[];
-  requiringPayment: OrderCard[];
-  recentPayments: PaymentRow[];
+  requiringPayment?: OrderCard[];
+  recentPayments?: PaymentRow[];
 };
 
 function formatStatus(status: string) {
@@ -180,6 +182,8 @@ export default function DashboardPage() {
   }
 
   const { metrics } = data;
+  const requiringPayment = data.requiringPayment ?? [];
+  const recentPayments = data.recentPayments ?? [];
 
   return (
     <div className="p-8">
@@ -210,14 +214,18 @@ export default function DashboardPage() {
           label="Picked Up Today"
           value={metrics.ordersPickedUpToday}
         />
-        <StatCard
-          label="Revenue Today"
-          value={`$${metrics.revenueToday.toFixed(2)}`}
-        />
-        <StatCard
-          label="Outstanding Balance"
-          value={`$${metrics.outstandingBalance.toFixed(2)}`}
-        />
+        {data.financial && (
+          <>
+            <StatCard
+              label="Revenue Today"
+              value={`$${(metrics.revenueToday ?? 0).toFixed(2)}`}
+            />
+            <StatCard
+              label="Outstanding Balance"
+              value={`$${(metrics.outstandingBalance ?? 0).toFixed(2)}`}
+            />
+          </>
+        )}
         <StatCard
           label="Customers Served Today"
           value={metrics.customersServedToday}
@@ -249,18 +257,20 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    <div className="font-medium">
-                      ${order.total.toFixed(2)}
+                  {order.paymentSummary && (
+                    <div className="text-right">
+                      <div className="font-medium">
+                        ${(order.total ?? 0).toFixed(2)}
+                      </div>
+                      <span
+                        className={`inline-block rounded-full px-3 py-1 text-xs font-medium mt-1 ${paymentStatusClasses(
+                          order.paymentSummary.paymentStatus
+                        )}`}
+                      >
+                        {order.paymentSummary.paymentStatus}
+                      </span>
                     </div>
-                    <span
-                      className={`inline-block rounded-full px-3 py-1 text-xs font-medium mt-1 ${paymentStatusClasses(
-                        order.paymentSummary.paymentStatus
-                      )}`}
-                    >
-                      {order.paymentSummary.paymentStatus}
-                    </span>
-                  </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -300,19 +310,21 @@ export default function DashboardPage() {
           )}
         </div>
 
+        {data.financial && (
+          <>
         {/* REQUIRING PAYMENT */}
         <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
           <div className="p-5 border-b">
             <h2 className="text-lg font-bold">Orders Requiring Payment</h2>
           </div>
 
-          {data.requiringPayment.length === 0 ? (
+          {requiringPayment.length === 0 ? (
             <div className="p-6 text-center text-gray-500">
               All orders are fully paid.
             </div>
           ) : (
             <div className="divide-y">
-              {data.requiringPayment.map((order) => (
+              {requiringPayment.map((order) => (
                 <div
                   key={order.id}
                   className="p-4 flex items-center justify-between"
@@ -326,14 +338,14 @@ export default function DashboardPage() {
 
                   <div className="text-right">
                     <div className="font-medium">
-                      ${order.paymentSummary.balanceRemaining.toFixed(2)} due
+                      ${(order.paymentSummary?.balanceRemaining ?? 0).toFixed(2)} due
                     </div>
                     <span
                       className={`inline-block rounded-full px-3 py-1 text-xs font-medium mt-1 ${paymentStatusClasses(
-                        order.paymentSummary.paymentStatus
+                        order.paymentSummary?.paymentStatus ?? ""
                       )}`}
                     >
-                      {order.paymentSummary.paymentStatus}
+                      {order.paymentSummary?.paymentStatus ?? ""}
                     </span>
                   </div>
                 </div>
@@ -348,13 +360,13 @@ export default function DashboardPage() {
             <h2 className="text-lg font-bold">Recent Payments</h2>
           </div>
 
-          {data.recentPayments.length === 0 ? (
+          {recentPayments.length === 0 ? (
             <div className="p-6 text-center text-gray-500">
               No payments recorded yet.
             </div>
           ) : (
             <div className="divide-y">
-              {data.recentPayments.map((payment) => (
+              {recentPayments.map((payment) => (
                 <div
                   key={payment.id}
                   className="p-4 flex items-center justify-between"
@@ -380,6 +392,8 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
 
       {/* RECENT ORDERS */}
@@ -399,8 +413,12 @@ export default function DashboardPage() {
                 <th className="text-left p-4">Order</th>
                 <th className="text-left p-4">Customer</th>
                 <th className="text-left p-4">Status</th>
-                <th className="text-right p-4">Total</th>
-                <th className="text-left p-4">Payment</th>
+                {data.financial && (
+                  <>
+                    <th className="text-right p-4">Total</th>
+                    <th className="text-left p-4">Payment</th>
+                  </>
+                )}
                 <th className="text-left p-4">Date</th>
               </tr>
             </thead>
@@ -426,19 +444,23 @@ export default function DashboardPage() {
                     </span>
                   </td>
 
-                  <td className="p-4 text-right font-medium">
-                    ${order.total.toFixed(2)}
-                  </td>
+                  {data.financial && order.paymentSummary && (
+                    <>
+                      <td className="p-4 text-right font-medium">
+                        ${(order.total ?? 0).toFixed(2)}
+                      </td>
 
-                  <td className="p-4">
-                    <span
-                      className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${paymentStatusClasses(
-                        order.paymentSummary.paymentStatus
-                      )}`}
-                    >
-                      {order.paymentSummary.paymentStatus}
-                    </span>
-                  </td>
+                      <td className="p-4">
+                        <span
+                          className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${paymentStatusClasses(
+                            order.paymentSummary.paymentStatus
+                          )}`}
+                        >
+                          {order.paymentSummary.paymentStatus}
+                        </span>
+                      </td>
+                    </>
+                  )}
 
                   <td className="p-4 text-gray-500">
                     {new Date(order.createdAt).toLocaleDateString()}

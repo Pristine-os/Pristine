@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { pricesMatch } from "@/lib/permissions";
 
 /*
  * Central pricing configuration.
@@ -142,4 +143,57 @@ export async function resolvePrice(
   });
 
   return override?.price ?? getDefaultPrice(garmentType, service);
+}
+
+type PricedLine = {
+  id?: string;
+  name: string;
+  service: string;
+  price: number;
+};
+
+/*
+ * Returns the lines whose price is an override — i.e. differs from the
+ * organization's catalog price for that garment type + service. Used to
+ * stop roles without "orders.overridePrice" from setting their own
+ * prices.
+ *
+ * `existing` (order edits) lets a line keep the price it already has as
+ * long as its garment type and service are unchanged, so an employee can
+ * adjust quantity or tag settings on an order a manager priced without
+ * tripping the check.
+ */
+export async function findPriceOverrides(
+  organizationId: string,
+  lines: PricedLine[],
+  existing: PricedLine[] = []
+): Promise<PricedLine[]> {
+  const catalog = await getPriceCatalog(organizationId);
+  const catalogMap = new Map(
+    catalog.map((entry) => [`${entry.garmentType}::${entry.service}`, entry.price])
+  );
+  const existingById = new Map(
+    existing.filter((line) => line.id).map((line) => [line.id as string, line])
+  );
+
+  return lines.filter((line) => {
+    const previous = line.id ? existingById.get(line.id) : undefined;
+
+    if (
+      previous &&
+      previous.name === line.name &&
+      previous.service === line.service &&
+      pricesMatch(previous.price, line.price)
+    ) {
+      return false;
+    }
+
+    const catalogPrice = catalogMap.get(`${line.name}::${line.service}`);
+
+    // A garment/service combination that isn't in the catalog has no
+    // approved price, so any price on it counts as an override.
+    if (catalogPrice === undefined) return true;
+
+    return !pricesMatch(catalogPrice, line.price);
+  });
 }

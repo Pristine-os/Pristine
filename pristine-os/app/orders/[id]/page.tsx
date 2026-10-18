@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useRef, useState } from "react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type Customer = {
   id: string;
@@ -137,6 +138,10 @@ export default function OrderDetailsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const { user, can } = useCurrentUser();
+  // Cosmetic only — PATCH /api/orders/[id] enforces both.
+  const priceLocked = !!user && !can("orders.overridePrice");
+  const canCorrectStatus = can("orders.correctStatus");
 
   const [order, setOrder] =
     useState<Order | null>(null);
@@ -786,8 +791,10 @@ export default function OrderDetailsPage({
       )}
 
 
-      {/* STATUS */}
+      {/* STATUS — free-form corrections are Manager/Owner only; everyone
+          can use the forward Quick Actions below. */}
 
+      {canCorrectStatus && (
       <div className="mb-8 rounded-xl border bg-white p-6 shadow-sm">
 
         <h2 className="text-lg font-bold mb-5">
@@ -832,6 +839,7 @@ export default function OrderDetailsPage({
         </div>
 
       </div>
+      )}
 
 
       {/* CUSTOMER + TOTAL */}
@@ -1450,6 +1458,7 @@ export default function OrderDetailsPage({
                         min="0"
                         step="0.01"
                         value={garment.price}
+                        readOnly={priceLocked}
                         onChange={(e) =>
                           updateEditGarment(
                             index,

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { forbidden, requireUser } from "@/lib/authz";
+import { can, isForwardTransition } from "@/lib/permissions";
+import { findPriceOverrides } from "@/lib/pricing";
 import { summarizePayments } from "@/lib/payments";
 import { syncGarmentTags } from "@/lib/garmentTags";
 import {
@@ -126,14 +127,13 @@ export async function GET(
   context: RouteContext
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requireUser("orders.view");
 
-    if (!session?.user?.organizationId) {
-      return Response.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const { id } = await context.params;
 
@@ -202,14 +202,13 @@ export async function PATCH(
   context: RouteContext
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requireUser("orders.view");
 
-    if (!session?.user?.organizationId) {
-      return Response.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const { id } = await context.params;
 
@@ -271,6 +270,33 @@ export async function PATCH(
       );
     }
 
+    // Each editable field is gated separately: free-form status changes
+    // (including CANCELLED) are corrections; garment and tag edits are
+    // everyday processing, with price overrides checked further down.
+    // The standard forward moves (the same ones the production board and
+    // pickup counter make) count as processing; anything else — jumps,
+    // backwards moves, CANCELLED — is a correction.
+    if (
+      body.status !== undefined &&
+      body.status !== existingOrder.status &&
+      !can(auth.user.role, "orders.correctStatus") &&
+      !(
+        can(auth.user.role, "orders.process") &&
+        isForwardTransition(existingOrder.status, body.status)
+      )
+    ) {
+      return forbidden(
+        "Only a Manager or Owner can change an order's status directly. Use the Production or Pickup screens instead."
+      );
+    }
+
+    if (
+      (body.garments !== undefined || body.tagPrintingEnabled !== undefined) &&
+      !can(auth.user.role, "orders.process")
+    ) {
+      return forbidden();
+    }
+
     if (
       body.tagPrintingEnabled !== undefined &&
       typeof body.tagPrintingEnabled !== "boolean"
@@ -326,6 +352,22 @@ export async function PATCH(
       }
 
       garmentLines = parsed.lines;
+
+      if (!can(auth.user.role, "orders.overridePrice")) {
+        const overrides = await findPriceOverrides(
+          session.user.organizationId,
+          garmentLines,
+          existingOrder.garments
+        );
+
+        if (overrides.length > 0) {
+          return forbidden(
+            `Only a Manager or Owner can set a custom price (${overrides
+              .map((line) => `${line.name} – ${line.service}`)
+              .join(", ")}).`
+          );
+        }
+      }
 
       newTotal = round2(
         garmentLines.reduce(

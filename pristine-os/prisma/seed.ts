@@ -33,6 +33,7 @@ async function main() {
         name: "Pristine Owner",
         email: "owner@pristine.com",
         password,
+        role: "OWNER",
         organizationId: organization.id,
       },
     });

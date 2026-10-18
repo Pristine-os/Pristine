@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import GarmentLineEditor from "@/components/orders/GarmentLineEditor";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import ScanInput from "@/components/scan/ScanInput";
 import {
   blankGarmentLine,
@@ -81,6 +82,7 @@ function paymentStatusClasses(status: string) {
 }
 
 export default function CounterPage() {
+  const { user, can } = useCurrentUser();
   const [stage, setStage] = useState<"search" | "building" | "created">(
     "search"
   );
@@ -809,6 +811,7 @@ export default function CounterPage() {
               onUpdate={updateGarment}
               onRemove={removeGarment}
               onAdd={addGarment}
+              priceLocked={!!user && !can("orders.overridePrice")}
             />
 
             <div className="mt-6 flex items-center justify-between flex-wrap gap-3">

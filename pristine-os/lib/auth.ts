@@ -1,16 +1,7 @@
-import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import type { AuthOptions } from "next-auth";
-
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL!,
-});
-
-const prisma = new PrismaClient({
-  adapter,
-});
+import { prisma } from "@/lib/prisma";
 
 export const authOptions: AuthOptions = {
   providers: [
@@ -33,7 +24,8 @@ export const authOptions: AuthOptions = {
           },
         });
 
-        if (!user) {
+        // Deactivated accounts can't sign in.
+        if (!user || !user.active) {
           return null;
         }
 
@@ -51,6 +43,7 @@ export const authOptions: AuthOptions = {
           name: user.name,
           email: user.email,
           organizationId: user.organizationId,
+          role: user.role,
         };
       },
     }),
@@ -63,16 +56,20 @@ export const authOptions: AuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.organizationId = (user as { organizationId: string }).organizationId;
+        token.organizationId = user.organizationId;
+        token.role = user.role;
       }
 
       return token;
     },
 
+    // The role carried here is for UI and page routing only — API routes
+    // re-read it from the database (lib/authz.ts).
     async session({ session, token }) {
       if (session.user) {
-        session.user.organizationId =
-          token.organizationId as string;
+        session.user.id = token.sub as string;
+        session.user.organizationId = token.organizationId;
+        session.user.role = token.role;
       }
 
       return session;

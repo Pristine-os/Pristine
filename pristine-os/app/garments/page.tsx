@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type PriceEntry = {
   garmentType: string;
@@ -16,6 +17,10 @@ type PricingData = {
 };
 
 export default function GarmentsPage() {
+  const { can } = useCurrentUser();
+  // Viewing is open to all staff; editing is Manager/Owner (enforced by
+  // /api/pricing — this only hides the controls).
+  const canManagePricing = can("pricing.manage");
   const [data, setData] = useState<PricingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -198,6 +203,7 @@ export default function GarmentsPage() {
                         key={key}
                         entry={entry}
                         busy={busy}
+                        readOnly={!canManagePricing}
                         onSave={(price) =>
                           savePrice(entry.garmentType, entry.service, price)
                         }
@@ -211,6 +217,7 @@ export default function GarmentsPage() {
             </table>
           </div>
 
+          {canManagePricing && (
           <div className="rounded-xl border bg-white p-6 shadow-sm">
             <h2 className="text-lg font-bold mb-4">Add a Price</h2>
 
@@ -277,6 +284,7 @@ export default function GarmentsPage() {
               </button>
             </div>
           </div>
+          )}
         </>
       )}
     </div>
@@ -286,11 +294,13 @@ export default function GarmentsPage() {
 function PriceRow({
   entry,
   busy,
+  readOnly,
   onSave,
   onReset,
 }: {
   entry: PriceEntry;
   busy: boolean;
+  readOnly: boolean;
   onSave: (price: number) => void;
   onReset: () => void;
 }) {
@@ -314,6 +324,7 @@ function PriceRow({
             min="0"
             step="0.01"
             value={value}
+            readOnly={readOnly}
             onChange={(e) => setValue(e.target.value)}
             className="w-28 rounded-lg border pl-7 pr-3 py-2 text-right"
           />
@@ -331,6 +342,7 @@ function PriceRow({
         </span>
       </td>
       <td className="p-4 text-right">
+        {!readOnly && (
         <div className="flex justify-end gap-2">
           <button
             disabled={busy || !changed}
@@ -350,6 +362,7 @@ function PriceRow({
             </button>
           )}
         </div>
+        )}
       </td>
     </tr>
   );
