@@ -468,6 +468,21 @@ describe.skipIf(!enabled)("API roles & permissions (integration)", () => {
       });
       expect(duplicate.status).toBe(409);
 
+      // A case-only variant of an existing (legacy) email is also a duplicate.
+      await prisma.user.update({ where: { id: USERS.employee.id }, data: { email: "Mixed.Case@Test.com" } });
+      const caseVariant = await call(routes.users.POST, {
+        method: "POST",
+        body: { name: "Variant", email: " mixed.case@test.com ", password: "longenough" },
+      });
+      expect(caseVariant.status).toBe(409);
+
+      // Wildcard characters are literal, not patterns.
+      const wildcard = await call(routes.users.POST, {
+        method: "POST",
+        body: { name: "Wild", email: "mixed_case@test.com", password: "longenough" },
+      });
+      expect(wildcard.status).toBe(201);
+
       const short = await call(routes.users.POST, {
         method: "POST",
         body: { name: "Short", email: "short@test.com", password: "short" },

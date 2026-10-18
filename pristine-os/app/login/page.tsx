@@ -12,7 +12,7 @@ export default function LoginPage() {
     e.preventDefault();
 
     await signIn("credentials", {
-      email,
+      email: email.trim(),
       password,
       callbackUrl: "/dashboard",
     });

@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/authz";
 import { can } from "@/lib/permissions";
-import { normalizeEmail, parseRole, validatePassword } from "@/lib/staff";
+import { findUserIdsByEmail, normalizeEmail, parseRole, validatePassword } from "@/lib/staff";
 
 // Managers see names, roles and active status only; Owners also see
 // contact details. Password hashes are never selected.
@@ -66,6 +66,15 @@ export async function POST(request: Request) {
 
     if (passwordError) {
       return Response.json({ error: passwordError }, { status: 400 });
+    }
+
+    // The unique index is case-sensitive; also block a case-only variant
+    // of an existing (legacy, mixed-case) email so logins stay unambiguous.
+    if ((await findUserIdsByEmail(email, 1)).length > 0) {
+      return Response.json(
+        { error: "An account with that email already exists." },
+        { status: 409 }
+      );
     }
 
     const password = await bcrypt.hash(body.password, 10);
