@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireUser } from "@/lib/authz";
 import { normalizeRackInput } from "@/lib/racks";
 
 // Occupancy is derived live from Order.rackId (no redundant counter) —
@@ -8,11 +7,13 @@ import { normalizeRackInput } from "@/lib/racks";
 // means "currently housed here" with no status filtering required.
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requireUser("orders.view");
 
-    if (!session?.user?.organizationId) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const racks = await prisma.rack.findMany({
       where: { organizationId: session.user.organizationId },
@@ -45,11 +46,13 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requireUser("settings.operational");
 
-    if (!session?.user?.organizationId) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const organizationId = session.user.organizationId;
     const body = await request.json();

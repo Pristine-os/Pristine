@@ -2,6 +2,7 @@ import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import GlobalSearch from "@/components/search/GlobalSearch";
+import SidebarNav from "@/components/nav/SidebarNav";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -32,53 +33,7 @@ export default function RootLayout({
           >
             <h2 style={{ marginBottom: "20px" }}>Pristine OS</h2>
 
-            <nav
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "12px",
-              }}
-            >
-              <a href="/counter" style={{ color: "white", textDecoration: "none", fontWeight: "bold" }}>
-                Counter
-              </a>
-              <a href="/pickup" style={{ color: "white", textDecoration: "none", fontWeight: "bold" }}>
-                Pickup
-              </a>
-              <a href="/production" style={{ color: "white", textDecoration: "none", fontWeight: "bold" }}>
-                Production
-              </a>
-              <a href="/rack-assignment" style={{ color: "white", textDecoration: "none", fontWeight: "bold" }}>
-                Rack Assignment
-              </a>
-              <a href="/racks" style={{ color: "white", textDecoration: "none" }}>
-                Racks
-              </a>
-              <a href="/dashboard" style={{ color: "white", textDecoration: "none" }}>
-                Dashboard
-              </a>
-              <a href="/customers" style={{ color: "white", textDecoration: "none" }}>
-                Customers
-              </a>
-              <a href="/orders" style={{ color: "white", textDecoration: "none" }}>
-                Orders
-              </a>
-              <a href="/garments" style={{ color: "white", textDecoration: "none" }}>
-                Garments
-              </a>
-              <a href="/payments" style={{ color: "white", textDecoration: "none" }}>
-                Payments
-              </a>
-
-              <div style={{ marginTop: "20px" }}>
-                <a
-                  href="/login"
-                  style={{ color: "#f87171", textDecoration: "none" }}
-                >
-                  Logout
-                </a>
-              </div>
-            </nav>
+            <SidebarNav />
           </aside>
 
           {/* Main Content */}

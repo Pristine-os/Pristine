@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireUser } from "@/lib/authz";
 
 // Scan-to-find: resolves a scanned/typed invoice barcode (Order.orderNumber)
 // to its order. Org-scoped exact match — an order number that exists but
@@ -8,11 +7,13 @@ import { authOptions } from "@/lib/auth";
 // exist at all, so cross-org data is never leaked through this endpoint.
 export async function GET(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requireUser("orders.view");
 
-    if (!session?.user?.organizationId) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const url = new URL(request.url);
     const code = (url.searchParams.get("code") || "").trim();

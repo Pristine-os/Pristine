@@ -1,19 +1,18 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { forbidden, requireUser } from "@/lib/authz";
+import { can } from "@/lib/permissions";
+import { findPriceOverrides } from "@/lib/pricing";
 import { syncGarmentTags } from "@/lib/garmentTags";
 
 export async function GET() {
   try {
-    const session =
-      await getServerSession(authOptions);
+    const auth = await requireUser("orders.view");
 
-    if (!session?.user?.organizationId) {
-      return Response.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const orders =
       await prisma.order.findMany({
@@ -57,15 +56,13 @@ export async function POST(
   request: Request
 ) {
   try {
-    const session =
-      await getServerSession(authOptions);
+    const auth = await requireUser("orders.create");
 
-    if (!session?.user?.organizationId) {
-      return Response.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const body =
       await request.json();
@@ -176,6 +173,39 @@ export async function POST(
         }
       );
 
+    // Roles without price-override permission must use catalog prices.
+    if (!can(auth.user.role, "orders.overridePrice")) {
+      const overrides = await findPriceOverrides(
+        session.user.organizationId,
+        garments
+      );
+
+      if (overrides.length > 0) {
+        return forbidden(
+          `Only a Manager or Owner can set a custom price (${overrides
+            .map((line) => `${line.name} – ${line.service}`)
+            .join(", ")}).`
+        );
+      }
+    }
+
+    // New orders start as RECEIVED; any other starting status is a
+    // status correction.
+    const status = body.status || "RECEIVED";
+
+    if (
+      !["RECEIVED", "PROCESSING", "READY", "PICKED_UP", "CANCELLED"].includes(status)
+    ) {
+      return Response.json({ error: "Invalid order status" }, { status: 400 });
+    }
+
+    if (
+      status !== "RECEIVED" &&
+      !can(auth.user.role, "orders.correctStatus")
+    ) {
+      return forbidden("Only a Manager or Owner can create an order in another status.");
+    }
+
     // Order-level master switch — default-on, explicit opt-out.
     const tagPrintingEnabled = body.tagPrintingEnabled !== false;
 
@@ -227,7 +257,7 @@ export async function POST(
       const created = await tx.order.create({
         data: {
           orderNumber,
-          status: body.status || "RECEIVED",
+          status,
           customerId: body.customerId,
           organizationId: session.user.organizationId,
           total,

@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireUser } from "@/lib/authz";
 import { summarizePayments } from "@/lib/payments";
 
 const MIN_QUERY_LENGTH = 2;
@@ -18,14 +17,13 @@ function digitsOnly(value: string): string {
 
 export async function GET(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requireUser("orders.view");
 
-    if (!session?.user?.organizationId) {
-      return Response.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const organizationId = session.user.organizationId;
 

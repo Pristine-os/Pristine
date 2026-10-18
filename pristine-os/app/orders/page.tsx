@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type Customer = {
   id: string;
@@ -49,6 +50,8 @@ const statuses = [
 ];
 
 export default function OrdersPage() {
+  const { user, can } = useCurrentUser();
+  const priceLocked = !!user && !can("orders.overridePrice");
   const [orders, setOrders] =
     useState<Order[]>([]);
 
@@ -842,6 +845,7 @@ export default function OrdersPage() {
                           value={
                             garment.price
                           }
+                          readOnly={priceLocked}
                           onChange={(
                             event
                           ) =>

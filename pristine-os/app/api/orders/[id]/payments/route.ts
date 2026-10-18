@@ -1,7 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireUser } from "@/lib/authz";
 import { PAYMENT_METHODS, summarizePayments } from "@/lib/payments";
 
 // Thrown inside the Serializable transaction below to short-circuit an
@@ -24,14 +23,13 @@ export async function GET(
   context: RouteContext
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requireUser("orders.view");
 
-    if (!session?.user?.organizationId) {
-      return Response.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const { id } = await context.params;
 
@@ -86,14 +84,13 @@ export async function POST(
   context: RouteContext
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requireUser("payments.record");
 
-    if (!session?.user?.organizationId) {
-      return Response.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const { id } = await context.params;
 

@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import type { Role } from "@/lib/permissions";
 
 declare module "next-auth" {
   interface Session {
@@ -7,16 +7,19 @@ declare module "next-auth" {
       name?: string | null;
       email?: string | null;
       organizationId: string;
+      role: Role;
     };
   }
 
   interface User {
     organizationId: string;
+    role: Role;
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
     organizationId: string;
+    role: Role;
   }
 }

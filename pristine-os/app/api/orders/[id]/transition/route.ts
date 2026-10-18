@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireUser } from "@/lib/authz";
 import { summarizePayments } from "@/lib/payments";
 import {
   ensureReadyNotificationIntent,
@@ -28,11 +27,13 @@ const ALLOWED_TRANSITIONS: Record<string, string> = {
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requireUser("orders.process");
 
-    if (!session?.user?.organizationId) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const { id } = await context.params;
 

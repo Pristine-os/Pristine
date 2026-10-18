@@ -12,6 +12,8 @@ type GarmentLineEditorProps = {
   ) => void;
   onRemove: (index: number) => void;
   onAdd: () => void;
+  // Roles without price-override permission get catalog prices only.
+  priceLocked?: boolean;
 };
 
 export default function GarmentLineEditor({
@@ -20,6 +22,7 @@ export default function GarmentLineEditor({
   onUpdate,
   onRemove,
   onAdd,
+  priceLocked = false,
 }: GarmentLineEditorProps) {
   return (
     <div>
@@ -111,6 +114,8 @@ export default function GarmentLineEditor({
                   min="0"
                   step="0.01"
                   value={garment.price}
+                  readOnly={priceLocked}
+                  title={priceLocked ? "Catalog price — a Manager or Owner can change it" : undefined}
                   onChange={(event) =>
                     onUpdate(
                       index,

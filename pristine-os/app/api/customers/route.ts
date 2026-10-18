@@ -1,16 +1,14 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireUser } from "@/lib/authz";
 
 export async function GET(request: Request) {
-  const session = await getServerSession(authOptions);
+  const auth = await requireUser("customers.view");
 
-  if (!session?.user?.organizationId) {
-    return Response.json(
-      { error: "Unauthorized" },
-      { status: 401 }
-    );
+  if (auth.error) {
+    return auth.error;
   }
+
+  const session = { user: auth.user };
 
   const url = new URL(request.url);
   const search = url.searchParams.get("search")?.trim();
@@ -39,14 +37,13 @@ export async function GET(request: Request) {
 
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
+  const auth = await requireUser("customers.manage");
 
-  if (!session?.user?.organizationId) {
-    return Response.json(
-      { error: "Unauthorized" },
-      { status: 401 }
-    );
+  if (auth.error) {
+    return auth.error;
   }
+
+  const session = { user: auth.user };
 
   const body = await request.json();
 

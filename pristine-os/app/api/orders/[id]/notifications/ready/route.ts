@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireUser } from "@/lib/authz";
 import {
   ensureReadyNotificationIntent,
   attemptNotificationSend,
@@ -18,11 +17,13 @@ type RouteContext = { params: Promise<{ id: string }> };
 // resending something already SENT/SIMULATED.
 export async function POST(request: Request, context: RouteContext) {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requireUser("orders.process");
 
-    if (!session?.user?.organizationId) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.error) {
+      return auth.error;
     }
+
+    const session = { user: auth.user };
 
     const organizationId = session.user.organizationId;
     const { id } = await context.params;
