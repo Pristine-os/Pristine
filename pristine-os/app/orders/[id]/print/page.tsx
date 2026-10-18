@@ -2,6 +2,21 @@
 
 import { use, useEffect, useState } from "react";
 import CodeBarcode from "@/components/barcode/CodeBarcode";
+import { STORE_DEFAULTS, customerFacingName } from "@/lib/storeSettings";
+
+type StoreProfile = {
+  displayName: string | null;
+  tagline: string | null;
+  phone: string | null;
+  email: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  region: string | null;
+  postalCode: string | null;
+  businessHours: string | null;
+  receiptFooter: string | null;
+};
 
 type Customer = {
   firstName: string;
@@ -53,11 +68,19 @@ export default function PrintOrderPage({
   const [loading, setLoading] =
     useState(true);
 
+  // Unset fields (or a failed load) fall back to the original receipt text.
+  const [store, setStore] =
+    useState<StoreProfile | null>(null);
+
   const [error, setError] =
     useState("");
 
   useEffect(() => {
     async function loadOrder() {
+      const storeRequest = fetch("/api/store", { cache: "no-store" })
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null);
+
       try {
         const response = await fetch(
           `/api/orders/${id}`,
@@ -86,6 +109,9 @@ export default function PrintOrderPage({
           );
         }
 
+        // Store first, so the auto-print below never fires before the
+        // store details are on the page.
+        setStore(await storeRequest);
         setOrder(data);
       } catch (error) {
         console.error(
@@ -151,6 +177,17 @@ export default function PrintOrderPage({
       0
     ) || Number(order.total || 0);
 
+  const storeName = customerFacingName(store);
+
+  const storeContactLines = [
+    store?.addressLine1,
+    store?.addressLine2,
+    [store?.city, [store?.region, store?.postalCode].filter(Boolean).join(" ")]
+      .filter(Boolean)
+      .join(", "),
+    [store?.phone, store?.email].filter(Boolean).join(" · "),
+  ].filter((line): line is string => Boolean(line));
+
   return (
     <>
       <div className="min-h-screen bg-gray-100 py-8">
@@ -162,12 +199,20 @@ export default function PrintOrderPage({
           <div className="text-center border-b pb-5">
 
             <h1 className="text-2xl font-bold">
-              PRISTINE CLEANERS
+              {storeName.toUpperCase()}
             </h1>
 
             <p className="text-sm text-gray-500 mt-1">
-              Professional Garment Care
+              {store?.tagline || STORE_DEFAULTS.tagline}
             </p>
+
+            {storeContactLines.length > 0 && (
+              <div className="mt-2 text-xs text-gray-500">
+                {storeContactLines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+            )}
 
           </div>
 
@@ -332,14 +377,19 @@ export default function PrintOrderPage({
           <div className="border-t pt-5 text-center text-xs text-gray-500">
 
             <p className="font-medium text-gray-700">
-              Thank you for choosing
-              Pristine Cleaners
+              Thank you for choosing{" "}
+              {storeName}
             </p>
 
-            <p className="mt-2">
-              Please present this ticket
-              when picking up your order.
+            <p className="mt-2 whitespace-pre-line">
+              {store?.receiptFooter || STORE_DEFAULTS.receiptFooter}
             </p>
+
+            {store?.businessHours && (
+              <p className="mt-2 whitespace-pre-line">
+                {store.businessHours}
+              </p>
+            )}
 
             <p className="mt-3">
               {order.orderNumber}

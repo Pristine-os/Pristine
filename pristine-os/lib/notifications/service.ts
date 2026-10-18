@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getNotificationProvider } from "./config";
+import { customerFacingName } from "@/lib/storeSettings";
 
 export const READY_NOTIFICATION_TYPE = "ORDER_READY";
 
@@ -29,8 +30,12 @@ export function resolveChannel(
   return { channel: "NONE", recipient: "" };
 }
 
-function buildReadyMessage(orderNumber: string, firstName: string): string {
-  return `Hi ${firstName}, your order ${orderNumber} is ready for pickup at Pristine Cleaners.`;
+export function buildReadyMessage(
+  orderNumber: string,
+  firstName: string,
+  storeName: string
+): string {
+  return `Hi ${firstName}, your order ${orderNumber} is ready for pickup at ${storeName}.`;
 }
 
 // Called from inside the SAME Prisma transaction that just wrote an order's
@@ -105,11 +110,18 @@ export async function attemptNotificationSend(params: {
     include: {
       order: { select: { id: true, orderNumber: true } },
       customer: { select: { id: true, firstName: true, phone: true, email: true } },
+      organization: { select: { displayName: true, readyNotificationsEnabled: true } },
     },
   });
 
   if (!notification) {
     return { error: "Notification not found" as const };
+  }
+
+  // Store Settings can turn off automatic ready messages. The notification
+  // stays PENDING, so staff can still send it manually (an explicit send).
+  if (!isExplicitResend && !notification.organization.readyNotificationsEnabled) {
+    return { skipped: true as const, notification };
   }
 
   if (notification.status !== "PENDING" && !isExplicitResend) {
@@ -141,7 +153,11 @@ export async function attemptNotificationSend(params: {
   }
 
   const { provider, isSimulated } = getNotificationProvider();
-  const message = buildReadyMessage(notification.order.orderNumber, notification.customer.firstName);
+  const message = buildReadyMessage(
+    notification.order.orderNumber,
+    notification.customer.firstName,
+    customerFacingName(notification.organization)
+  );
 
   let result: { ok: true } | { ok: false; error: string };
   try {
