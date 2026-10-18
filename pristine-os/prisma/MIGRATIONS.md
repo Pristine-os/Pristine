@@ -69,26 +69,114 @@ Converts `User.role` from free-form text to the `UserRole` enum
 their current role — every account created so far defaulted to `OWNER`, so
 existing logins keep full access.
 
-Applying it to the development database (follow the reviewed path above —
-never `migrate dev`, never reset):
+The whole migration runs inside one explicit `BEGIN; … COMMIT;` (Prisma does
+not add a transaction for PostgreSQL migrations). Any failure — the
+invalid-role guard, a lock or statement timeout, a dropped connection —
+rolls everything back and leaves the schema and rows unchanged.
 
-1. Read-only pre-check — every value must be `OWNER`, `MANAGER` or `EMPLOYEE`:
+### Deploy order
+
+Apply this migration **before** deploying the code that uses it. The new code
+reads `User.active` and fails without it; the old code keeps working after the
+migration.
+
+### Applying it to the Supabase development database
+
+Never use `migrate dev` and never accept a reset here (see the rack checksum
+issue above).
+
+1. **Back up and review the backup.** Take a backup of the development
+   database and confirm it is restorable (it lists the `User` table and the
+   expected row counts) before continuing. Record where it is stored.
+
+2. **Verify you have a direct database connection, not the pooler.** Use the
+   *direct connection* string from the Supabase dashboard (Connect → Direct
+   connection), passed only to the migration commands — do not change the
+   app's `DATABASE_URL`. Do not rely on the port: the session pooler also
+   listens on 5432. Check the actual endpoint:
+   - Host must be `db.<project-ref>.supabase.co`. A host containing
+     `pooler.supabase.com` is the pooler (port 6543 = transaction mode,
+     5432 = session mode) — stop and get the direct string.
+   - Username must be plain `postgres`. `postgres.<project-ref>` is the
+     pooler's username format.
+   - Confirm the connection works and points at the expected database, without
+     changing anything:
+     ```
+     DATABASE_URL="<direct connection string>" npx prisma migrate status
+     ```
+     The output's `Datasource "db"` line must show the `db.<project-ref>.supabase.co`
+     host, and the only pending migration must be `20261018000000_add_user_roles`.
+
+3. **Read-only pre-check** — every value must be `OWNER`, `MANAGER` or `EMPLOYEE`:
    ```
    SELECT role, count(*) FROM "User" GROUP BY role;
    ```
-   The migration starts with a guard that aborts before changing anything if
-   another value is present. (Prisma does not wrap PostgreSQL migrations in a
-   transaction, so the guard is what keeps a failed run from leaving partial
-   changes.)
-2. Take a backup of the database.
-3. `npx prisma migrate deploy`
-4. `npx prisma migrate status`, then
-   `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script`
-   (expect an empty diff).
 
-Rollback SQL is in the comment at the top of the migration file.
+4. **Apply:**
+   ```
+   DATABASE_URL="<direct connection string>" npx prisma migrate deploy
+   ```
 
-Verified on a throwaway local database only: full history applied from
-scratch with `migrate deploy`; legacy rows (implicit and explicit `OWNER`)
-kept `OWNER`; new rows default to `EMPLOYEE`; post-migration diff empty; a row
-with an invalid role makes the guard abort with the schema left untouched.
+5. **Verify:**
+   ```
+   DATABASE_URL="<direct connection string>" npx prisma migrate status
+   DATABASE_URL="<direct connection string>" npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script
+   SELECT role, active, count(*) FROM "User" GROUP BY role, active;
+   ```
+   Expect "Database schema is up to date", an empty diff, and every existing
+   account still `OWNER` and `active = true`.
+
+### If `migrate deploy` fails
+
+The transaction rolls back, so the schema and data are unchanged, but Prisma
+records the migration as failed and blocks further deploys (error `P3009`).
+
+- Prisma's own error message will usually read only `current transaction is
+  aborted…`: after the failure it tries to log on the same aborted
+  connection, so the real cause is lost from its output and the
+  `_prisma_migrations.logs` column. Find the real error in the Supabase
+  Postgres logs (Logs → Postgres) for the time of the attempt, or re-run the
+  pre-check in step 3.
+- Confirm nothing changed: `"User"."role"` is still `text` and the
+  `UserRole` type does not exist:
+  ```
+  SELECT data_type FROM information_schema.columns WHERE table_name = 'User' AND column_name = 'role';
+  SELECT count(*) FROM pg_type WHERE typname = 'UserRole';
+  ```
+- Fix the cause, then mark the attempt as rolled back and deploy again:
+  ```
+  DATABASE_URL="<direct connection string>" npx prisma migrate resolve --rolled-back 20261018000000_add_user_roles
+  DATABASE_URL="<direct connection string>" npx prisma migrate deploy
+  ```
+  Only use `--rolled-back` after confirming the schema is unchanged.
+
+### Rolling back after a successful migration
+
+Only with an approved rollback plan and a verified backup taken immediately
+before the rollback:
+
+1. **Roll back the application code first** to a version that does not use
+   `User.active` or the `UserRole` enum, and confirm it is serving traffic.
+   Rolling back the database while the new code is running breaks every
+   request.
+2. **Then roll back the database** with the SQL in the header comment of the
+   migration file (it runs in one transaction and removes the
+   `_prisma_migrations` row). Role values are kept as text; MANAGER and
+   EMPLOYEE assignments survive, but deactivation flags are lost.
+3. Verify with `migrate status` (the migration shows as pending again) and
+   the `information_schema` checks above.
+
+### Verification already done (throwaway local databases only)
+
+Each scenario started from the full prior migration history with existing
+rows (an implicit-default Owner, an explicit Owner, a Manager, an order):
+
+- Success: existing roles kept (Owners stay `OWNER`), `active = true` on all
+  rows, new rows default to `EMPLOYEE`, unrelated rows untouched, post-migration
+  diff empty.
+- Forced failures — invalid role (guard), a view depending on `User.role`
+  (fails after the enum is created and the default dropped), a pre-existing
+  `active` column (fails on the last statement): in every case the schema and
+  all rows were identical before and after, the migration was recorded as
+  unfinished, further deploys were blocked with `P3009`, and after fixing the
+  cause `migrate resolve --rolled-back` + `migrate deploy` succeeded.
