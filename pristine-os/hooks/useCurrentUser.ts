@@ -8,6 +8,7 @@ export type ClientUser = {
   name: string | null;
   email: string;
   role: Role;
+  storeName: string | null;
   permissions: Permission[];
 };
 

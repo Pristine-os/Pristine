@@ -32,6 +32,9 @@ export const PERMISSIONS = [
   // Approved operational store settings (currently: racks).
   "settings.operational",
 
+  // Store profile (name and other store-wide settings). Owner only.
+  "settings.store",
+
   // Staff.
   "staff.view",
   "staff.manage",

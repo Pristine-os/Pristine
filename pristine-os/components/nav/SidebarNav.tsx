@@ -16,6 +16,7 @@ const LINKS: { href: string; label: string; bold?: boolean; permission?: Permiss
   { href: "/garments", label: "Garments" },
   { href: "/payments", label: "Payments", permission: "reports.financial" },
   { href: "/staff", label: "Staff", permission: "staff.view" },
+  { href: "/settings", label: "Settings", permission: "staff.view" },
 ];
 
 export default function SidebarNav() {
@@ -48,6 +49,9 @@ export default function SidebarNav() {
       <div style={{ marginTop: "20px" }}>
         {user && (
           <div style={{ fontSize: "12px", color: "#9ca3af", marginBottom: "8px" }}>
+            {user.storeName && (
+              <div style={{ color: "#e5e7eb", marginBottom: "2px" }}>{user.storeName}</div>
+            )}
             {user.name || user.email} · {ROLE_LABELS[user.role]}
           </div>
         )}
