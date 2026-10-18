@@ -26,6 +26,14 @@ type GarmentLine = {
   printTag: boolean;
 };
 
+// Thrown inside the update transaction when the order changed after this
+// request read it, so the request's checks no longer hold.
+class OrderChangedError extends Error {
+  constructor(public currentStatus: string | null) {
+    super("Order changed during update");
+  }
+}
+
 function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -394,6 +402,40 @@ export async function PATCH(
     // their id — and therefore their GarmentTag identities — survive
     // price/service/quantity/print-preference edits untouched.
     const order = await prisma.$transaction(async (tx) => {
+      // Every check above (status permissions, the paid-order cancel
+      // block, the total-vs-paid floor, the garment id set) was made
+      // against `existingOrder`. Lock the row and confirm those facts
+      // still hold, so a concurrent status change, edit or payment can't
+      // slip in between the read and this write. FOR UPDATE also makes a
+      // concurrent payment insert wait: its foreign-key check needs a
+      // KEY SHARE lock on this same order row.
+      const [locked] = await tx.$queryRaw<{ status: string; updatedAt: Date }[]>`
+        SELECT "status", "updatedAt" FROM "Order"
+        WHERE "id" = ${id} AND "organizationId" = ${session.user.organizationId}
+        FOR UPDATE
+      `;
+
+      if (!locked) {
+        throw new OrderChangedError(null);
+      }
+
+      if (body.status !== undefined || garmentLines) {
+        const paid = await tx.payment.aggregate({
+          where: { orderId: id },
+          _sum: { amount: true },
+        });
+        const paymentsChanged = round2(Number(paid._sum.amount ?? 0)) !== amountPaid;
+        const statusChanged =
+          body.status !== undefined && locked.status !== existingOrder.status;
+        const orderEdited =
+          garmentLines !== undefined &&
+          locked.updatedAt.getTime() !== existingOrder.updatedAt.getTime();
+
+        if (paymentsChanged || statusChanged || orderEdited) {
+          throw new OrderChangedError(locked.status);
+        }
+      }
+
       if (garmentLines) {
         const existingById = new Map(
           existingOrder.garments.map((garment) => [garment.id, garment])
@@ -537,6 +579,17 @@ export async function PATCH(
       readyNotification: readyNotification ?? null,
     });
   } catch (error) {
+    if (error instanceof OrderChangedError) {
+      return Response.json(
+        {
+          error:
+            "This order was changed by someone else while you were editing it. Refresh and try again.",
+          currentStatus: error.currentStatus,
+        },
+        { status: 409 }
+      );
+    }
+
     console.error("UPDATE ORDER ERROR:", error);
 
     return Response.json(
