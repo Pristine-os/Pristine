@@ -17,6 +17,24 @@ model Organization {
   name      String
   createdAt DateTime @default(now())
 
+  // Customer-facing store profile. Every field is optional; when unset,
+  // receipts and notifications use the original built-in text.
+  displayName   String?
+  tagline       String?
+  phone         String?
+  email         String?
+  addressLine1  String?
+  addressLine2  String?
+  city          String?
+  region        String?
+  postalCode    String?
+  businessHours String?
+  receiptFooter String?
+
+  // When false, orders entering READY don't send the automatic "ready for
+  // pickup" message; staff can still send it manually from the order.
+  readyNotificationsEnabled Boolean @default(true)
+
   customers     Customer[]
   orders        Order[]
   users         User[]
@@ -47,7 +65,7 @@ model Customer {
   organizationId String
   createdAt      DateTime @default(now())
 
-  organization  Organization    @relation(fields: [organizationId], references: [id])
+  organization  Organization   @relation(fields: [organizationId], references: [id])
   orders        Order[]
   notifications Notification[]
 }
