@@ -42,10 +42,9 @@ describe("escapeLikePattern", () => {
 });
 
 describe.skipIf(!enabled)("barcode lookups (integration)", () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let prisma: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let orderLookup: any, rackLookup: any;
+  let prisma: typeof import("@/lib/prisma").prisma;
+  let orderLookup: typeof import("@/app/api/orders/lookup/route");
+  let rackLookup: typeof import("@/app/api/racks/lookup/route");
 
   async function lookup(handler: { GET: (r: Request) => Promise<Response> }, code: string) {
     const response = await handler.GET(

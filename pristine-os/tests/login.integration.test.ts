@@ -28,8 +28,7 @@ if (enabled) {
 }
 
 describe.skipIf(!enabled)("login email normalization (integration)", () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let prisma: any;
+  let prisma: typeof import("@/lib/prisma").prisma;
   let authorizeCredentials: (email: unknown, password: unknown) => Promise<{ id: string; role: string } | null>;
   const PASSWORD = "correct-horse";
 

@@ -34,12 +34,27 @@ vi.mock("next-auth", () => ({
 }));
 
 describe.skipIf(!enabled)("behaviour kept by the lint type fixes (integration)", () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let prisma: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let routes: Record<string, any>;
+  let prisma: typeof import("@/lib/prisma").prisma;
+  let routes: Awaited<ReturnType<typeof loadRoutes>>;
 
-  async function call(handler: (r: Request, c?: unknown) => Promise<Response>, method: string, body?: unknown, params: Record<string, string> = {}) {
+  // Imported only after DATABASE_URL points at the test database.
+  async function loadRoutes() {
+    return {
+      racks: await import("@/app/api/racks/route"),
+      rackById: await import("@/app/api/racks/[id]/route"),
+      orders: await import("@/app/api/orders/route"),
+      dashboard: await import("@/app/api/dashboard/route"),
+    };
+  }
+
+  // P is the route's own params type, so a test can't pass params a route
+  // doesn't accept.
+  async function call<P extends Record<string, string> = Record<string, string>>(
+    handler: (request: Request, context: { params: Promise<P> }) => Promise<Response>,
+    method: string,
+    body?: unknown,
+    params: P = {} as P
+  ) {
     const response = await handler(
       new Request("http://localhost/api/x", {
         method,
@@ -53,12 +68,7 @@ describe.skipIf(!enabled)("behaviour kept by the lint type fixes (integration)",
 
   beforeAll(async () => {
     prisma = (await import("@/lib/prisma")).prisma;
-    routes = {
-      racks: await import("@/app/api/racks/route"),
-      rackById: await import("@/app/api/racks/[id]/route"),
-      orders: await import("@/app/api/orders/route"),
-      dashboard: await import("@/app/api/dashboard/route"),
-    };
+    routes = await loadRoutes();
   });
 
   beforeEach(async () => {
@@ -82,7 +92,7 @@ describe.skipIf(!enabled)("behaviour kept by the lint type fixes (integration)",
     const delegate = prisma.rack;
     const original = delegate.findFirst;
     let calls = 0;
-    delegate.findFirst = async (args: unknown) => {
+    const wrapped = async (args?: Parameters<typeof original>[0]) => {
       calls += 1;
       if (calls === callNumber) {
         delegate.findFirst = original;
@@ -90,6 +100,9 @@ describe.skipIf(!enabled)("behaviour kept by the lint type fixes (integration)",
       }
       return original.call(delegate, args);
     };
+    // A test double for a few calls: Prisma's own return type is a lazy
+    // query object, which the route only awaits.
+    delegate.findFirst = wrapped as unknown as typeof original;
   }
 
   it("still returns 409 when the database rejects a duplicate rack", async () => {
