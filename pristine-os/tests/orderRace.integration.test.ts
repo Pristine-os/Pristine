@@ -5,6 +5,7 @@
  * guard as the other integration tests.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { must } from "./helpers";
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
@@ -43,10 +44,8 @@ function as(actor: keyof typeof USERS) {
 }
 
 describe.skipIf(!enabled)("order PATCH concurrency (integration)", () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let prisma: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let orderRoute: any;
+  let prisma: typeof import("@/lib/prisma").prisma;
+  let orderRoute: typeof import("@/app/api/orders/[id]/route");
 
   async function patch(body: unknown) {
     const response = await orderRoute.PATCH(
@@ -63,22 +62,25 @@ describe.skipIf(!enabled)("order PATCH concurrency (integration)", () => {
   // Runs `change` right after the route's next read of the order, before
   // it writes. (vi.spyOn can't be restored cleanly on Prisma's model
   // delegates, so this wraps the method once and puts it back itself.)
-  let originalFindFirst: unknown;
+  let originalFindFirst: typeof prisma.order.findFirst | undefined;
 
   function changeAfterRead(change: () => Promise<unknown>) {
     const delegate = prisma.order;
     const original = delegate.findFirst;
     originalFindFirst = original;
-    delegate.findFirst = async (args: unknown) => {
+    const wrapped = async (args?: Parameters<typeof original>[0]) => {
       delegate.findFirst = original;
       const result = await original.call(delegate, args);
       await change();
       return result;
     };
+    // A test double for one call: Prisma's own return type is a lazy query
+    // object, which the route only awaits.
+    delegate.findFirst = wrapped as unknown as typeof original;
   }
 
   async function garmentLine(overrides: Record<string, unknown> = {}) {
-    const garment = await prisma.garment.findFirst({ where: { orderId: "o-1" } });
+    const garment = must(await prisma.garment.findFirst({ where: { orderId: "o-1" } }), "garment");
     return {
       id: garment.id,
       name: garment.name,
@@ -127,7 +129,7 @@ describe.skipIf(!enabled)("order PATCH concurrency (integration)", () => {
     });
   });
 
-  const status = async () => (await prisma.order.findUnique({ where: { id: "o-1" } })).status;
+  const status = async () => must(await prisma.order.findUnique({ where: { id: "o-1" } })).status;
 
   it("refuses a forward move when someone else changed the status meanwhile", async () => {
     as("employee");
@@ -159,7 +161,7 @@ describe.skipIf(!enabled)("order PATCH concurrency (integration)", () => {
 
     const result = await patch({ garments: [line] });
     expect(result.status).toBe(409);
-    expect((await prisma.order.findUnique({ where: { id: "o-1" } })).total).toBe(12);
+    expect(must(await prisma.order.findUnique({ where: { id: "o-1" } })).total).toBe(12);
   });
 
   it("refuses a garment edit when the order was edited meanwhile", async () => {
@@ -171,7 +173,7 @@ describe.skipIf(!enabled)("order PATCH concurrency (integration)", () => {
 
     const result = await patch({ garments: [line] });
     expect(result.status).toBe(409);
-    expect((await prisma.garment.findFirst({ where: { orderId: "o-1" } })).quantity).toBe(2);
+    expect(must(await prisma.garment.findFirst({ where: { orderId: "o-1" } })).quantity).toBe(2);
   });
 
   it("still applies updates when nothing changed in between", async () => {
@@ -181,7 +183,7 @@ describe.skipIf(!enabled)("order PATCH concurrency (integration)", () => {
 
     as("manager");
     expect((await patch({ garments: [await garmentLine({ quantity: 3 })] })).status).toBe(200);
-    expect((await prisma.order.findUnique({ where: { id: "o-1" } })).total).toBe(18);
+    expect(must(await prisma.order.findUnique({ where: { id: "o-1" } })).total).toBe(18);
   });
 
   it("does not block tag-printing toggles on a concurrent status change", async () => {

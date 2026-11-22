@@ -59,10 +59,26 @@ export async function GET() {
       paymentSummary: summarizePayments(order.total, order.payments),
     }));
 
-    const stripPayments = (order: (typeof orderCards)[number]) => {
-      const { payments, ...rest } = order;
-      return rest;
-    };
+    // Every card field except the raw payment rows.
+    const stripPayments = ({
+      id,
+      orderNumber,
+      status,
+      total,
+      createdAt,
+      updatedAt,
+      customer,
+      paymentSummary,
+    }: (typeof orderCards)[number]) => ({
+      id,
+      orderNumber,
+      status,
+      total,
+      createdAt,
+      updatedAt,
+      customer,
+      paymentSummary,
+    });
 
     const ordersCreatedToday = orderCards.filter((order) =>
       isToday(new Date(order.createdAt))

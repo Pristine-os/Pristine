@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import type { ApiErrorBody } from "@/lib/apiResponse";
 
 type Customer = {
   id: string;
@@ -134,7 +135,7 @@ export default function OrdersPage() {
       const text =
         await response.text();
 
-      let data: any;
+      let data: Customer[] & ApiErrorBody;
 
       try {
         data = JSON.parse(text);
@@ -185,7 +186,7 @@ export default function OrdersPage() {
       const text =
         await response.text();
 
-      let data: any;
+      let data: Order[] & ApiErrorBody;
 
       try {
         data = JSON.parse(text);
@@ -459,7 +460,7 @@ export default function OrdersPage() {
       const text =
         await response.text();
 
-      let data: any;
+      let data: Order & ApiErrorBody;
 
       try {
         data = JSON.parse(text);

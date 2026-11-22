@@ -4,6 +4,7 @@
  * "test", which is wiped.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { must } from "./helpers";
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
@@ -49,10 +50,8 @@ function as(actor: Actor | null) {
 }
 
 describe.skipIf(!enabled)("store settings API (integration)", () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let prisma: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let store: any;
+  let prisma: typeof import("@/lib/prisma").prisma;
+  let store: typeof import("@/app/api/store/route");
 
   async function call(method: "GET" | "PATCH", body?: unknown) {
     const request = new Request("http://localhost/api/store", {
@@ -117,13 +116,13 @@ describe.skipIf(!enabled)("store settings API (integration)", () => {
     expect((await call("PATCH", { name: "Manager Edit" })).status).toBe(403);
     as("employee");
     expect((await call("PATCH", { name: "Employee Edit" })).status).toBe(403);
-    expect((await prisma.organization.findUnique({ where: { id: "org-1" } })).name).toBe("Store One");
+    expect(must(await prisma.organization.findUnique({ where: { id: "org-1" } })).name).toBe("Store One");
 
     as("owner");
     const result = await call("PATCH", { name: "  Pristine   Cleaners " });
     expect(result.status).toBe(200);
     expect(result.json.name).toBe("Pristine Cleaners");
-    expect((await prisma.organization.findUnique({ where: { id: "org-1" } })).name).toBe("Pristine Cleaners");
+    expect(must(await prisma.organization.findUnique({ where: { id: "org-1" } })).name).toBe("Pristine Cleaners");
   });
 
   it("validates input and leaves the name unchanged on error", async () => {
@@ -131,15 +130,15 @@ describe.skipIf(!enabled)("store settings API (integration)", () => {
     for (const body of [{ name: "" }, { name: "   " }, { name: "x".repeat(101) }, { name: "Two\nLines" }, { name: 5 }, {}, "not json"]) {
       expect((await call("PATCH", body)).status).toBe(400);
     }
-    expect((await prisma.organization.findUnique({ where: { id: "org-1" } })).name).toBe("Store One");
+    expect(must(await prisma.organization.findUnique({ where: { id: "org-1" } })).name).toBe("Store One");
   });
 
   it("only ever changes the Owner's own organization", async () => {
     as("otherOwner");
     const result = await call("PATCH", { name: "Renamed Two", organizationId: "org-1", id: "org-1" });
     expect(result.status).toBe(200);
-    expect((await prisma.organization.findUnique({ where: { id: "org-1" } })).name).toBe("Store One");
-    expect((await prisma.organization.findUnique({ where: { id: "org-2" } })).name).toBe("Renamed Two");
+    expect(must(await prisma.organization.findUnique({ where: { id: "org-1" } })).name).toBe("Store One");
+    expect(must(await prisma.organization.findUnique({ where: { id: "org-2" } })).name).toBe("Renamed Two");
 
     as("owner");
     expect((await call("GET")).json.name).toBe("Store One");

@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import type { ApiErrorBody } from "@/lib/apiResponse";
 
 type OrderSummary = {
   id: string;
@@ -83,7 +84,7 @@ export default function CustomerDetailsPage({
       });
 
       const text = await response.text();
-      let data: any;
+      let data: Customer & ApiErrorBody;
 
       try {
         data = JSON.parse(text);
@@ -137,7 +138,7 @@ export default function CustomerDetailsPage({
       });
 
       const text = await response.text();
-      let data: any;
+      let data: Partial<Customer> & ApiErrorBody;
 
       try {
         data = JSON.parse(text);
