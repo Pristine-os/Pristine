@@ -47,7 +47,7 @@ model Customer {
   organizationId String
   createdAt      DateTime @default(now())
 
-  organization  Organization    @relation(fields: [organizationId], references: [id])
+  organization  Organization   @relation(fields: [organizationId], references: [id])
   orders        Order[]
   notifications Notification[]
 }
@@ -164,4 +164,16 @@ model Notification {
 
   @@unique([orderId, type])
   @@index([customerId])
+}
+
+// Login abuse protection (lib/loginThrottle.ts). One row per throttle key
+// (an account, a network, or an account on a network). Only an HMAC of the
+// key is stored — never the email address or IP.
+model LoginThrottle {
+  keyHash       String    @id
+  attempts      Int       @default(0)
+  lastAttemptAt DateTime
+  blockedUntil  DateTime?
+
+  @@index([lastAttemptAt])
 }
