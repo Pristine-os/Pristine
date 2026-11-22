@@ -50,6 +50,19 @@ function paymentBadgeClasses(status: string) {
   return "bg-red-100 text-red-700";
 }
 
+async function fetchBoard() {
+  const response = await fetch("/api/production", { cache: "no-store" });
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.details || data?.error || "Failed to load production board"
+    );
+  }
+
+  return data.orders;
+}
+
 export default function ProductionBoardPage() {
   const [orders, setOrders] = useState<BoardOrder[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,36 +77,61 @@ export default function ProductionBoardPage() {
   // second and third clicks see the lock immediately.
   const inFlightRef = useRef<Record<string, boolean>>({});
 
+  function showLoadError(err: unknown) {
+    console.error("Load production board error:", err);
+    setError(
+      err instanceof Error ? err.message : "Failed to load production board"
+    );
+  }
+
+  // Refresh: the button, the timer, and after each move.
   async function loadBoard(showSpinner = true) {
     try {
       if (showSpinner) setLoading(true);
       setError("");
-
-      const response = await fetch("/api/production", { cache: "no-store" });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data?.details || data?.error || "Failed to load production board"
-        );
-      }
-
-      setOrders(data.orders);
+      setOrders(await fetchBoard());
     } catch (err) {
-      console.error("Load production board error:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to load production board"
-      );
+      showLoadError(err);
     } finally {
       if (showSpinner) setLoading(false);
     }
   }
 
+  // Initial load, then a quiet refresh on a timer. The initial load only
+  // sets state from the request's callbacks, and not at all if the page has
+  // gone away by the time it answers.
   useEffect(() => {
-    loadBoard();
+    let active = true;
 
-    const interval = setInterval(() => loadBoard(false), REFRESH_INTERVAL_MS);
-    return () => clearInterval(interval);
+    fetchBoard()
+      .then((orders) => {
+        if (active) setOrders(orders);
+      })
+      .catch((err) => {
+        if (active) showLoadError(err);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    // Quiet refresh: no spinner; clears the error on success, shows it on
+    // failure — the same as the old loadBoard(false).
+    const interval = setInterval(() => {
+      fetchBoard()
+        .then((orders) => {
+          if (!active) return;
+          setError("");
+          setOrders(orders);
+        })
+        .catch((err) => {
+          if (active) showLoadError(err);
+        });
+    }, REFRESH_INTERVAL_MS);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   async function transition(orderId: string, to: "PROCESSING" | "READY") {

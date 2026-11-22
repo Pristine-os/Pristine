@@ -13,6 +13,22 @@ type StaffMember = {
   createdAt?: string;
 };
 
+type StaffResponse = {
+  users: StaffMember[];
+  canManage?: boolean;
+};
+
+async function fetchStaff(): Promise<StaffResponse> {
+  const response = await fetch("/api/users", { cache: "no-store" });
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data?.error || "Failed to load staff");
+  }
+
+  return data;
+}
+
 export default function StaffPage() {
   const { user } = useCurrentUser();
 
@@ -27,25 +43,40 @@ export default function StaffPage() {
   const [newRole, setNewRole] = useState<Role>("EMPLOYEE");
   const [creating, setCreating] = useState(false);
 
+  function applyStaff(data: StaffResponse) {
+    setStaff(data.users);
+    setCanManage(data.canManage === true);
+  }
+
+  function showLoadError(err: unknown) {
+    setError(err instanceof Error ? err.message : "Failed to load staff");
+  }
+
+  // Reload after a change.
   async function loadStaff() {
     try {
-      const response = await fetch("/api/users", { cache: "no-store" });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to load staff");
-      }
-
-      setStaff(data.users);
-      setCanManage(data.canManage === true);
+      applyStaff(await fetchStaff());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load staff");
+      showLoadError(err);
     }
   }
 
+  // Initial load. State is only set from the request's callbacks, and not
+  // at all if the page has gone away by the time it answers.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadStaff();
+    let active = true;
+
+    fetchStaff()
+      .then((data) => {
+        if (active) applyStaff(data);
+      })
+      .catch((err) => {
+        if (active) showLoadError(err);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function updateStaff(id: string, changes: Record<string, unknown>) {

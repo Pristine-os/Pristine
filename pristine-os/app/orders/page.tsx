@@ -50,6 +50,93 @@ const statuses = [
   "CANCELLED",
 ];
 
+async function fetchCustomerList(): Promise<Customer[]> {
+  const response =
+    await fetch(
+      "/api/customers",
+      {
+        cache: "no-store",
+      }
+    );
+
+  const text =
+    await response.text();
+
+  let data: Customer[] & ApiErrorBody;
+
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(
+      "Customer API returned invalid JSON."
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error ||
+        "Failed to load customers."
+    );
+  }
+
+  return Array.isArray(data) ? data : [];
+}
+
+async function fetchOrderList(): Promise<Order[]> {
+  const response =
+    await fetch(
+      "/api/orders",
+      {
+        cache: "no-store",
+      }
+    );
+
+  const text =
+    await response.text();
+
+  let data: Order[] & ApiErrorBody;
+
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Orders API returned invalid JSON. HTTP ${response.status}`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.details ||
+        data?.error ||
+        "Failed to load orders."
+    );
+  }
+
+  return Array.isArray(data) ? data : [];
+}
+
+async function fetchPricingCatalog(): Promise<PricingCatalog> {
+  const response =
+    await fetch(
+      "/api/pricing",
+      {
+        cache: "no-store",
+      }
+    );
+
+  const data =
+    await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error ||
+        "Failed to load pricing."
+    );
+  }
+
+  return data;
+}
+
 export default function OrdersPage() {
   const { user, can } = useCurrentUser();
   const priceLocked = !!user && !can("orders.overridePrice");
@@ -118,182 +205,110 @@ export default function OrdersPage() {
   }
 
 
-  /*
-   * Load customers
-   */
+  // Applies the pricing catalog: the first blank garment line defaults to
+  // the first garment type and service at its catalog price.
+  function applyCatalog(data: PricingCatalog) {
+    setCatalog(data);
 
-  async function loadCustomers() {
-    try {
-      const response =
-        await fetch(
-          "/api/customers",
-          {
-            cache: "no-store",
-          }
-        );
+    const garmentType =
+      data.garmentTypes?.[0] || "";
 
-      const text =
-        await response.text();
+    const service =
+      data.services?.[0] || "";
 
-      let data: Customer[] & ApiErrorBody;
-
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(
-          "Customer API returned invalid JSON."
-        );
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            "Failed to load customers."
-        );
-      }
-
-      if (Array.isArray(data)) {
-        setCustomers(data);
-      } else {
-        setCustomers([]);
-      }
-
-    } catch (error) {
-      console.error(
-        "Failed to load customers:",
-        error
-      );
-    }
+    setGarments((current) =>
+      current.length === 1 &&
+      !current[0].name &&
+      !current[0].service
+        ? [
+            {
+              name: garmentType,
+              service,
+              quantity: 1,
+              price: data.prices?.find(
+                (entry: PriceEntry) =>
+                  entry.garmentType ===
+                    garmentType &&
+                  entry.service === service
+              )?.price || 0,
+              prepayDiscount: false,
+            },
+          ]
+        : current
+    );
   }
 
+  function showOrdersError(error: unknown) {
+    console.error(
+      "Failed to load orders:",
+      error
+    );
+
+    setError(
+      error instanceof Error
+        ? error.message
+        : "Failed to load orders."
+    );
+  }
 
   /*
-   * Load orders
+   * Reload orders (after creating one)
    */
 
   async function loadOrders() {
     try {
       setLoading(true);
-
-      const response =
-        await fetch(
-          "/api/orders",
-          {
-            cache: "no-store",
-          }
-        );
-
-      const text =
-        await response.text();
-
-      let data: Order[] & ApiErrorBody;
-
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(
-          `Orders API returned invalid JSON. HTTP ${response.status}`
-        );
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          data?.details ||
-            data?.error ||
-            "Failed to load orders."
-        );
-      }
-
-      if (Array.isArray(data)) {
-        setOrders(data);
-      } else {
-        setOrders([]);
-      }
-
+      setOrders(await fetchOrderList());
     } catch (error) {
-      console.error(
-        "Failed to load orders:",
-        error
-      );
-
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Failed to load orders."
-      );
-
+      showOrdersError(error);
     } finally {
       setLoading(false);
     }
   }
 
-
-  /*
-   * Load pricing catalog
-   */
-
-  async function loadPricing() {
-    try {
-      const response =
-        await fetch(
-          "/api/pricing",
-          {
-            cache: "no-store",
-          }
-        );
-
-      const data =
-        await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            "Failed to load pricing."
-        );
-      }
-
-      setCatalog(data);
-
-      const garmentType =
-        data.garmentTypes?.[0] || "";
-
-      const service =
-        data.services?.[0] || "";
-
-      setGarments((current) =>
-        current.length === 1 &&
-        !current[0].name &&
-        !current[0].service
-          ? [
-              {
-                name: garmentType,
-                service,
-                quantity: 1,
-                price: data.prices?.find(
-                  (entry: PriceEntry) =>
-                    entry.garmentType ===
-                      garmentType &&
-                    entry.service === service
-                )?.price || 0,
-                prepayDiscount: false,
-              },
-            ]
-          : current
-      );
-
-    } catch (error) {
-      console.error(
-        "Failed to load pricing:",
-        error
-      );
-    }
-  }
-
-
+  // Initial load of customers, orders and the pricing catalog. State is
+  // only set from the requests' callbacks, and not at all if the page has
+  // gone away by the time they answer. Customer and pricing failures are
+  // logged only, as before.
   useEffect(() => {
-    loadCustomers();
-    loadOrders();
-    loadPricing();
+    let active = true;
+
+    fetchCustomerList()
+      .then((list) => {
+        if (active) setCustomers(list);
+      })
+      .catch((error) => {
+        console.error(
+          "Failed to load customers:",
+          error
+        );
+      });
+
+    fetchOrderList()
+      .then((list) => {
+        if (active) setOrders(list);
+      })
+      .catch((error) => {
+        if (active) showOrdersError(error);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    fetchPricingCatalog()
+      .then((data) => {
+        if (active) applyCatalog(data);
+      })
+      .catch((error) => {
+        console.error(
+          "Failed to load pricing:",
+          error
+        );
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
 

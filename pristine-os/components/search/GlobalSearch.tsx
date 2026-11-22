@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 type CustomerResult = {
   id: string;
@@ -81,18 +82,27 @@ export default function GlobalSearch() {
       document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    const trimmed = query.trim();
+  // Typing resets or starts the search state immediately; the effect only
+  // runs the debounced request and ignores answers for an outdated query.
+  function changeQuery(next: string) {
+    if (next === query) return;
+    setQuery(next);
 
-    if (!trimmed) {
+    if (!next.trim()) {
       setResults(null);
       setLoading(false);
       setError("");
-      return;
+    } else {
+      setLoading(true);
+      setError("");
     }
+  }
 
-    setLoading(true);
-    setError("");
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+
+    let active = true;
 
     const timer = setTimeout(async () => {
       try {
@@ -107,25 +117,30 @@ export default function GlobalSearch() {
           throw new Error(data?.error || "Search failed");
         }
 
+        if (!active) return;
         setResults(data);
         setOpen(true);
       } catch (err) {
+        if (!active) return;
         console.error("Search error:", err);
         setError(
           err instanceof Error ? err.message : "Search failed"
         );
         setResults(null);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }, 300);
 
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [query]);
 
   function goTo(path: string) {
     setOpen(false);
-    setQuery("");
+    changeQuery("");
     setResults(null);
     window.location.href = path;
   }
@@ -133,7 +148,7 @@ export default function GlobalSearch() {
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape") {
       setOpen(false);
-      setQuery("");
+      changeQuery("");
       setResults(null);
       return;
     }
@@ -160,7 +175,7 @@ export default function GlobalSearch() {
     <div ref={containerRef} className="relative w-full max-w-xl">
       <input
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => changeQuery(e.target.value)}
         onFocus={() => query.trim() && setOpen(true)}
         onKeyDown={handleKeyDown}
         placeholder="Search customers or orders — name, phone, email, order #"
@@ -263,12 +278,12 @@ export default function GlobalSearch() {
                 No matches for &ldquo;{trimmedQuery}&rdquo;.
               </div>
 
-              <a
+              <Link
                 href="/customers"
                 className="inline-block text-sm font-medium text-blue-600 hover:text-blue-800"
               >
                 + Create New Customer
-              </a>
+              </Link>
             </div>
           )}
         </div>

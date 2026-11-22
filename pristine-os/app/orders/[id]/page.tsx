@@ -133,6 +133,37 @@ function formatStatus(status: string) {
     );
 }
 
+async function fetchOrder(id: string): Promise<Order> {
+  const response = await fetch(
+    `/api/orders/${id}`,
+    {
+      cache: "no-store",
+    }
+  );
+
+  const text = await response.text();
+
+  let data: Order & ApiErrorBody;
+
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Order API returned invalid JSON. HTTP ${response.status}`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.details ||
+        data?.error ||
+        "Failed to load order"
+    );
+  }
+
+  return data;
+}
+
 export default function OrderDetailsPage({
   params,
 }: {
@@ -147,8 +178,12 @@ export default function OrderDetailsPage({
   const [order, setOrder] =
     useState<Order | null>(null);
 
-  const [loading, setLoading] =
-    useState(true);
+  // The id whose load has finished (successfully or not). Loading is
+  // derived from it, so opening another order shows the loading state
+  // straight away, exactly as resetting it at the start of a load did.
+  const [loadedId, setLoadedId] =
+    useState<string | null>(null);
+  const loading = loadedId !== id;
 
   const [updating, setUpdating] =
     useState(false);
@@ -282,24 +317,23 @@ export default function OrderDetailsPage({
     }
   }
 
-  async function loadPricing() {
-    try {
-      const response = await fetch("/api/pricing", {
-        cache: "no-store",
+  // Pricing catalog for the garment editor, loaded once. A failure is
+  // logged and leaves the editor without catalog prices, as before.
+  useEffect(() => {
+    let active = true;
+
+    fetch("/api/pricing", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (active && response.ok) setCatalog(data);
+      })
+      .catch((error) => {
+        console.error("Failed to load pricing:", error);
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        setCatalog(data);
-      }
-    } catch (error) {
-      console.error("Failed to load pricing:", error);
-    }
-  }
-
-  useEffect(() => {
-    loadPricing();
+    return () => {
+      active = false;
+    };
   }, []);
 
   function lookupPrice(garmentType: string, service: string): number {
@@ -444,59 +478,40 @@ export default function OrderDetailsPage({
     }
   }
 
-  async function loadOrder() {
-    try {
-      setLoading(true);
-      setError("");
-
-      const response = await fetch(
-        `/api/orders/${id}`,
-        {
-          cache: "no-store",
-        }
-      );
-
-      const text = await response.text();
-
-      let data;
-
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(
-          `Order API returned invalid JSON. HTTP ${response.status}`
-        );
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          data?.details ||
-            data?.error ||
-            "Failed to load order"
-        );
-      }
-
-      setOrder(data);
-    } catch (error) {
-      console.error(
-        "Failed to load order:",
-        error
-      );
-
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Failed to load order"
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  // Loads whenever the id changes. State is only set from the request's
+  // callbacks, and not at all if the id changed again or the page went away
+  // before it answered.
   useEffect(() => {
-    if (id) {
-      loadOrder();
-    }
+    if (!id) return;
+
+    let active = true;
+
+    fetchOrder(id)
+      .then((data) => {
+        if (!active) return;
+        setError("");
+        setOrder(data);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.error(
+          "Failed to load order:",
+          error
+        );
+
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load order"
+        );
+      })
+      .finally(() => {
+        if (active) setLoadedId(id);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   async function updateStatus(

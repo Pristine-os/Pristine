@@ -118,50 +118,59 @@ function OrderLink({ order }: { order: { id: string; orderNumber: string } }) {
   );
 }
 
+async function fetchDashboard(): Promise<DashboardData> {
+  const response = await fetch("/api/dashboard", {
+    cache: "no-store",
+  });
+
+  const text = await response.text();
+  let json: DashboardData & ApiErrorBody;
+
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Dashboard API returned invalid JSON. HTTP ${response.status}`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      json?.details || json?.error || "Failed to load dashboard"
+    );
+  }
+
+  return json;
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  async function loadDashboard() {
-    try {
-      setLoading(true);
-      setError("");
+  // Loads once on mount. State is only set from the request's callbacks,
+  // and not at all if the page has gone away by the time it answers.
+  useEffect(() => {
+    let active = true;
 
-      const response = await fetch("/api/dashboard", {
-        cache: "no-store",
+    fetchDashboard()
+      .then((json) => {
+        if (active) setData(json);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Failed to load dashboard:", err);
+        setError(
+          err instanceof Error ? err.message : "Failed to load dashboard"
+        );
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
 
-      const text = await response.text();
-      let json: DashboardData & ApiErrorBody;
-
-      try {
-        json = JSON.parse(text);
-      } catch {
-        throw new Error(
-          `Dashboard API returned invalid JSON. HTTP ${response.status}`
-        );
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          json?.details || json?.error || "Failed to load dashboard"
-        );
-      }
-
-      setData(json);
-    } catch (err) {
-      console.error("Failed to load dashboard:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to load dashboard"
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadDashboard();
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (loading) {

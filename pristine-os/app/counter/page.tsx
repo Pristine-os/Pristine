@@ -179,18 +179,27 @@ export default function CounterPage() {
   }, [stage]);
 
   // ---- Search ----
-  useEffect(() => {
-    const trimmed = query.trim();
+  // Typing resets or starts the search state immediately; the effect only
+  // runs the debounced request and ignores answers for an outdated query.
+  function changeQuery(next: string) {
+    if (next === query) return;
+    setQuery(next);
 
-    if (!trimmed) {
+    if (!next.trim()) {
       setSearchResults(null);
       setSearchLoading(false);
       setSearchError("");
-      return;
+    } else {
+      setSearchLoading(true);
+      setSearchError("");
     }
+  }
 
-    setSearchLoading(true);
-    setSearchError("");
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+
+    let active = true;
 
     const timer = setTimeout(async () => {
       try {
@@ -205,24 +214,28 @@ export default function CounterPage() {
           throw new Error(data?.error || "Search failed");
         }
 
-        setSearchResults(data.customers || []);
+        if (active) setSearchResults(data.customers || []);
       } catch (err) {
+        if (!active) return;
         console.error("Counter search error:", err);
         setSearchError(
           err instanceof Error ? err.message : "Search failed"
         );
         setSearchResults(null);
       } finally {
-        setSearchLoading(false);
+        if (active) setSearchLoading(false);
       }
     }, 300);
 
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [query]);
 
   function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape") {
-      setQuery("");
+      changeQuery("");
       setSearchResults(null);
       return;
     }
@@ -262,7 +275,7 @@ export default function CounterPage() {
       setGarments([blankGarmentLine(catalog)]);
       setTagPrintingEnabled(true);
       setCreateOrderError("");
-      setQuery("");
+      changeQuery("");
       setSearchResults(null);
       setShowCreateCustomer(false);
       setStage("building");
@@ -510,7 +523,7 @@ export default function CounterPage() {
 
   function finishAndStartNext() {
     setStage("search");
-    setQuery("");
+    changeQuery("");
     setSearchResults(null);
     setSearchError("");
     setShowCreateCustomer(false);
@@ -595,7 +608,7 @@ export default function CounterPage() {
           <input
             ref={searchInputRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => changeQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
             placeholder="Search by name, phone, or email..."
             className="w-full rounded-lg border px-4 py-3 text-lg"

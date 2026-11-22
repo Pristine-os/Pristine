@@ -52,6 +52,31 @@ function paymentStatusClasses(status: string) {
   return "bg-red-100 text-red-700";
 }
 
+async function fetchCustomer(id: string): Promise<Customer> {
+  const response = await fetch(`/api/customers/${id}`, {
+    cache: "no-store",
+  });
+
+  const text = await response.text();
+  let data: Customer & ApiErrorBody;
+
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Customer API returned invalid JSON. HTTP ${response.status}`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.details || data?.error || "Failed to load customer"
+    );
+  }
+
+  return data;
+}
+
 export default function CustomerDetailsPage({
   params,
 }: {
@@ -60,7 +85,11 @@ export default function CustomerDetailsPage({
   const { id } = use(params);
 
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [loading, setLoading] = useState(true);
+  // The id whose load has finished (successfully or not). Loading is
+  // derived from it, so opening another customer shows the loading state
+  // straight away, exactly as resetting it at the start of a load did.
+  const [loadedId, setLoadedId] = useState<string | null>(null);
+  const loading = loadedId !== id;
   const [error, setError] = useState("");
 
   const [editing, setEditing] = useState(false);
@@ -74,54 +103,40 @@ export default function CustomerDetailsPage({
     email: "",
   });
 
-  async function loadCustomer() {
-    try {
-      setLoading(true);
-      setError("");
-
-      const response = await fetch(`/api/customers/${id}`, {
-        cache: "no-store",
-      });
-
-      const text = await response.text();
-      let data: Customer & ApiErrorBody;
-
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(
-          `Customer API returned invalid JSON. HTTP ${response.status}`
-        );
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          data?.details || data?.error || "Failed to load customer"
-        );
-      }
-
-      setCustomer(data);
-      setForm({
-        firstName: data.firstName,
-        lastName: data.lastName,
-        phone: data.phone,
-        email: data.email || "",
-      });
-    } catch (err) {
-      console.error("Failed to load customer:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to load customer"
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  // Loads whenever the id changes. State is only set from the request's
+  // callbacks, and not at all if the id changed again or the page went away
+  // before it answered.
   useEffect(() => {
-    if (id) {
-      loadCustomer();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!id) return;
+
+    let active = true;
+
+    fetchCustomer(id)
+      .then((data) => {
+        if (!active) return;
+        setError("");
+        setCustomer(data);
+        setForm({
+          firstName: data.firstName,
+          lastName: data.lastName,
+          phone: data.phone,
+          email: data.email || "",
+        });
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Failed to load customer:", err);
+        setError(
+          err instanceof Error ? err.message : "Failed to load customer"
+        );
+      })
+      .finally(() => {
+        if (active) setLoadedId(id);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   async function saveCustomer() {
