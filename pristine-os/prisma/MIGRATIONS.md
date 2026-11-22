@@ -180,3 +180,12 @@ rows (an implicit-default Owner, an explicit Owner, a Manager, an order):
   all rows were identical before and after, the migration was recorded as
   unfinished, further deploys were blocked with `P3009`, and after fixing the
   cause `migrate resolve --rolled-back` + `migrate deploy` succeeded.
+
+## `20261122000000_add_user_session_version` (password reset session invalidation)
+
+Adds `User.sessionVersion INTEGER NOT NULL DEFAULT 0` — additive, one
+transaction, rollback SQL in the file header. Existing sessions carry no
+version and count as 0, so the migration and deploy log nobody out. Apply it
+with the same reviewed steps as `20261018000000_add_user_roles` above
+(verified backup, verified direct connection, `migrate deploy`), **before**
+deploying the code that reads the column.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { signOut } from "next-auth/react";
 import type { Permission, Role } from "@/lib/permissions";
 
 export type ClientUser = {
@@ -24,7 +25,16 @@ export function useCurrentUser() {
     let cancelled = false;
 
     fetch("/api/me", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : null))
+      .then((response) => {
+        // The server no longer accepts this session (password reset,
+        // deactivation): end it in the browser too, instead of leaving a
+        // signed-in-looking app whose every request fails.
+        if (response.status === 401 && window.location.pathname !== "/login") {
+          signOut({ callbackUrl: "/login" });
+          return null;
+        }
+        return response.ok ? response.json() : null;
+      })
       .then((data) => {
         if (!cancelled) setUser(data);
       })

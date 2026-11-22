@@ -51,6 +51,7 @@ export async function authorizeCredentials(
     email: user.email,
     organizationId: user.organizationId,
     role: user.role,
+    sessionVersion: user.sessionVersion,
   };
 }
 
@@ -79,6 +80,7 @@ export const authOptions: AuthOptions = {
       if (user) {
         token.organizationId = user.organizationId;
         token.role = user.role;
+        token.sessionVersion = user.sessionVersion;
       }
 
       return token;
@@ -91,6 +93,8 @@ export const authOptions: AuthOptions = {
         session.user.id = token.sub as string;
         session.user.organizationId = token.organizationId;
         session.user.role = token.role;
+        // Tokens issued before session versions existed count as version 0.
+        session.user.sessionVersion = token.sessionVersion ?? 0;
       }
 
       return session;

@@ -18,7 +18,9 @@ export type CurrentUser = {
  * The role, active flag and organization are always re-read from the
  * database rather than trusted from the JWT, so a demotion or
  * deactivation takes effect on the very next request instead of when the
- * token expires. Any failure denies by default.
+ * token expires. The session's version must also match the user's current
+ * sessionVersion, so a password reset ends every session issued before
+ * it. Any failure denies by default.
  */
 export async function requireUser(
   permission?: Permission
@@ -39,6 +41,7 @@ export async function requireUser(
       role: true,
       active: true,
       organizationId: true,
+      sessionVersion: true,
     },
   });
 
@@ -46,7 +49,8 @@ export async function requireUser(
     !user ||
     !user.active ||
     !isRole(user.role) ||
-    user.organizationId !== session.user.organizationId
+    user.organizationId !== session.user.organizationId ||
+    (session.user.sessionVersion ?? 0) !== user.sessionVersion
   ) {
     return { error: Response.json({ error: "Unauthorized" }, { status: 401 }) };
   }
