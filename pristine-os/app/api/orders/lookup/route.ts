@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/authz";
+import { escapeLikePattern } from "@/lib/likePattern";
 
 // Scan-to-find: resolves a scanned/typed invoice barcode (Order.orderNumber)
 // to its order. Org-scoped exact match — an order number that exists but
@@ -25,7 +26,8 @@ export async function GET(request: Request) {
     const order = await prisma.order.findFirst({
       where: {
         organizationId: session.user.organizationId,
-        orderNumber: { equals: code, mode: "insensitive" },
+        // Exact, case-insensitive match: wildcards in the code are literal.
+        orderNumber: { equals: escapeLikePattern(code), mode: "insensitive" },
       },
       include: {
         customer: {

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/authz";
+import { escapeLikePattern } from "@/lib/likePattern";
 
 // Scan-to-find for racks. Org-scoped exact match on barcodeValue — a rack
 // barcode from another organization behaves identically to a nonexistent
@@ -26,7 +27,8 @@ export async function GET(request: Request) {
     const rack = await prisma.rack.findFirst({
       where: {
         organizationId: session.user.organizationId,
-        barcodeValue: { equals: code, mode: "insensitive" },
+        // Exact, case-insensitive match: wildcards in the code are literal.
+        barcodeValue: { equals: escapeLikePattern(code), mode: "insensitive" },
       },
     });
 
