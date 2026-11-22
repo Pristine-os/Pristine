@@ -97,9 +97,17 @@ export async function PATCH(request: Request, context: RouteContext) {
 
         if (ruleError) throw new StaffRuleError(ruleError);
 
+        // A password reset ends the account's existing sessions, and so
+        // does deactivation (so reactivating later doesn't revive them).
+        const revokeSessions =
+          data.password !== undefined || (data.active === false && target.active);
+
         return tx.user.update({
           where: { id: target.id },
-          data,
+          data: {
+            ...data,
+            ...(revokeSessions ? { sessionVersion: { increment: 1 } } : {}),
+          },
           select: { id: true, name: true, email: true, role: true, active: true, createdAt: true },
         });
       },

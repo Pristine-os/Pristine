@@ -32,6 +32,9 @@ model User {
   password       String
   role           UserRole @default(EMPLOYEE)
   active         Boolean  @default(true)
+  // Bumped to revoke every existing login session for this user (password
+  // reset, deactivation). Sessions carry the value they were issued with.
+  sessionVersion Int      @default(0)
   organizationId String
   createdAt      DateTime @default(now())
 
