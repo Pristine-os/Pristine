@@ -10,6 +10,7 @@
  *     npx prisma migrate deploy && npm test
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { must } from "./helpers";
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
@@ -38,18 +39,24 @@ vi.mock("next-auth", () => ({
   getServerSession: vi.fn(async () => currentSession),
 }));
 
-type Handler = (request: Request, context?: unknown) => Promise<Response>;
+// Route handlers take (request, { params }); P is the route's own params
+// type, so a test can't pass params a route doesn't accept.
+type RouteParams = Record<string, string>;
+type Handler<P extends RouteParams> = (
+  request: Request,
+  context: { params: Promise<P> }
+) => Promise<Response>;
 
-async function call(
-  handler: Handler,
-  options: { method?: string; body?: unknown; params?: Record<string, string>; url?: string } = {}
+async function call<P extends RouteParams = RouteParams>(
+  handler: Handler<P>,
+  options: { method?: string; body?: unknown; params?: P; url?: string } = {}
 ) {
   const request = new Request(options.url ?? "http://localhost/api/test", {
     method: options.method ?? "GET",
     headers: { "Content-Type": "application/json" },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
-  const response = await handler(request, { params: Promise.resolve(options.params ?? {}) });
+  const response = await handler(request, { params: Promise.resolve(options.params ?? ({} as P)) });
   const text = await response.text();
   return { status: response.status, json: text ? JSON.parse(text) : null };
 }
@@ -76,14 +83,17 @@ function as(actor: Actor | null) {
 }
 
 describe.skipIf(!enabled)("API roles & permissions (integration)", () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let prisma: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let routes: Record<string, any>;
+  let prisma: typeof import("@/lib/prisma").prisma;
+  let routes: Awaited<ReturnType<typeof loadRoutes>>;
 
   beforeAll(async () => {
     prisma = (await import("@/lib/prisma")).prisma;
-    routes = {
+    routes = await loadRoutes();
+  });
+
+  // Imported only after DATABASE_URL points at the test database.
+  async function loadRoutes() {
+    return {
       orders: await import("@/app/api/orders/route"),
       order: await import("@/app/api/orders/[id]/route"),
       transition: await import("@/app/api/orders/[id]/transition/route"),
@@ -99,7 +109,7 @@ describe.skipIf(!enabled)("API roles & permissions (integration)", () => {
       me: await import("@/app/api/me/route"),
       search: await import("@/app/api/search/route"),
     };
-  });
+  }
 
   beforeEach(async () => {
     await prisma.$executeRawUnsafe(
@@ -221,10 +231,13 @@ describe.skipIf(!enabled)("API roles & permissions (integration)", () => {
 
     it("lets Employees edit quantities on a Manager-priced order but not the price", async () => {
       const created = await createOrder("manager", [{ ...catalogLine, price: 4 }]);
-      const order = await prisma.order.findUnique({
-        where: { id: created.json.id },
-        include: { garments: true },
-      });
+      const order = must(
+        await prisma.order.findUnique({
+          where: { id: created.json.id },
+          include: { garments: true },
+        }),
+        "order"
+      );
       const garment = order.garments[0];
       const line = {
         id: garment.id,
@@ -456,7 +469,7 @@ describe.skipIf(!enabled)("API roles & permissions (integration)", () => {
       expect(result.json.password).toBeUndefined();
       expect(result.json.email).toBe("new.hire@test.com");
 
-      const stored = await prisma.user.findUnique({ where: { email: "new.hire@test.com" } });
+      const stored = must(await prisma.user.findUnique({ where: { email: "new.hire@test.com" } }), "user");
       expect(stored.password).not.toBe("longenough");
 
       const list = await call(routes.users.GET);
