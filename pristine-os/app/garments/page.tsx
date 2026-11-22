@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import type { ApiErrorBody } from "@/lib/apiResponse";
 
 type PriceEntry = {
   garmentType: string;
@@ -40,7 +41,7 @@ export default function GarmentsPage() {
       });
 
       const text = await response.text();
-      let json: any;
+      let json: PricingData & ApiErrorBody;
 
       try {
         json = JSON.parse(text);

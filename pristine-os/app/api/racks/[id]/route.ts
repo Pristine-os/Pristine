@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/authz";
+import { isUniqueViolation } from "@/lib/prismaErrors";
 import { validateRackName } from "@/lib/racks";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -120,8 +121,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     const rack = await prisma.rack.update({ where: { id }, data });
 
     return Response.json(rack);
-  } catch (error: any) {
-    if (error?.code === "P2002") {
+  } catch (error) {
+    if (isUniqueViolation(error)) {
       return Response.json(
         { error: "Another rack already uses this name." },
         { status: 409 }

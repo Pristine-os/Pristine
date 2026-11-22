@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/authz";
+import { isUniqueViolation } from "@/lib/prismaErrors";
 import { normalizeRackInput } from "@/lib/racks";
 
 // Occupancy is derived live from Order.rackId (no redundant counter) —
@@ -95,8 +96,8 @@ export async function POST(request: Request) {
     });
 
     return Response.json(rack, { status: 201 });
-  } catch (error: any) {
-    if (error?.code === "P2002") {
+  } catch (error) {
+    if (isUniqueViolation(error)) {
       return Response.json(
         { error: "A rack with this name or number already exists." },
         { status: 409 }

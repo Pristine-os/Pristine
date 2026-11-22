@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import LogoutButton from "@/components/auth/LogoutButton";
+import type { ApiErrorBody } from "@/lib/apiResponse";
 
 type OrderCard = {
   id: string;
@@ -132,7 +133,7 @@ export default function DashboardPage() {
       });
 
       const text = await response.text();
-      let json: any;
+      let json: DashboardData & ApiErrorBody;
 
       try {
         json = JSON.parse(text);
@@ -191,7 +192,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-gray-500 mt-1">
-            Today's snapshot of orders, pickups, and payments.
+            Today&apos;s snapshot of orders, pickups, and payments.
           </p>
         </div>
 

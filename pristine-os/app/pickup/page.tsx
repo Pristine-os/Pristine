@@ -136,7 +136,6 @@ function PickupInner() {
     if (prefillOrderId) {
       loadFullOrder(prefillOrderId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillOrderId]);
 
   async function loadFullOrder(id: string) {

@@ -41,12 +41,12 @@ export default function AddCustomerDialog() {
               Add Customer
             </h2>
 
-            {Object.keys(form).map((field) => (
+            {(Object.keys(form) as (keyof typeof form)[]).map((field) => (
               <input
                 key={field}
                 className="border p-2 w-full mb-2"
                 placeholder={field}
-                value={(form as any)[field]}
+                value={form[field]}
                 onChange={(e) =>
                   setForm({
                     ...form,

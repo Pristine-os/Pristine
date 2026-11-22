@@ -125,7 +125,7 @@ export async function POST(
 
     const garments =
       body.garments.map(
-        (garment: any) => {
+        (garment: Record<string, unknown>) => {
 
           const quantity =
             Number(
