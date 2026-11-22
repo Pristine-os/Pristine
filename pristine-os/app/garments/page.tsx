@@ -17,6 +17,29 @@ type PricingData = {
   prices: PriceEntry[];
 };
 
+async function fetchPricing(): Promise<PricingData> {
+  const response = await fetch("/api/pricing", {
+    cache: "no-store",
+  });
+
+  const text = await response.text();
+  let json: PricingData & ApiErrorBody;
+
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Pricing API returned invalid JSON. HTTP ${response.status}`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(json?.error || "Failed to load pricing.");
+  }
+
+  return json;
+}
+
 export default function GarmentsPage() {
   const { can } = useCurrentUser();
   // Viewing is open to all staff; editing is Manager/Owner (enforced by
@@ -31,52 +54,51 @@ export default function GarmentsPage() {
   const [newService, setNewService] = useState("");
   const [newPrice, setNewPrice] = useState("");
 
+  // Applies a freshly loaded catalog. The "add a price" pickers default to
+  // the first garment type and service, but only if nothing is chosen yet.
+  function applyPricing(json: PricingData) {
+    setData(json);
+    setNewGarmentType((current) => current || json.garmentTypes?.[0] || "");
+    setNewService((current) => current || json.services?.[0] || "");
+  }
+
+  function showLoadError(err: unknown) {
+    console.error("Failed to load pricing:", err);
+    setError(err instanceof Error ? err.message : "Failed to load pricing.");
+  }
+
+  // Reload after a save or reset.
   async function loadPricing() {
     try {
       setLoading(true);
       setError("");
-
-      const response = await fetch("/api/pricing", {
-        cache: "no-store",
-      });
-
-      const text = await response.text();
-      let json: PricingData & ApiErrorBody;
-
-      try {
-        json = JSON.parse(text);
-      } catch {
-        throw new Error(
-          `Pricing API returned invalid JSON. HTTP ${response.status}`
-        );
-      }
-
-      if (!response.ok) {
-        throw new Error(json?.error || "Failed to load pricing.");
-      }
-
-      setData(json);
-
-      if (!newGarmentType && json.garmentTypes?.length) {
-        setNewGarmentType(json.garmentTypes[0]);
-      }
-
-      if (!newService && json.services?.length) {
-        setNewService(json.services[0]);
-      }
+      applyPricing(await fetchPricing());
     } catch (err) {
-      console.error("Failed to load pricing:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to load pricing."
-      );
+      showLoadError(err);
     } finally {
       setLoading(false);
     }
   }
 
+  // Initial load. State is only set from the request's callbacks, and not
+  // at all if the page has gone away by the time it answers.
   useEffect(() => {
-    loadPricing();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let active = true;
+
+    fetchPricing()
+      .then((json) => {
+        if (active) applyPricing(json);
+      })
+      .catch((err) => {
+        if (active) showLoadError(err);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   function keyFor(garmentType: string, service: string) {
@@ -307,9 +329,14 @@ function PriceRow({
 }) {
   const [value, setValue] = useState(String(entry.price));
 
-  useEffect(() => {
+  // When the saved price changes (after a save or reset), show it in the
+  // input. Adjusted during render rather than in an effect, so the row
+  // never renders once with the stale value.
+  const [shownPrice, setShownPrice] = useState(entry.price);
+  if (entry.price !== shownPrice) {
+    setShownPrice(entry.price);
     setValue(String(entry.price));
-  }, [entry.price]);
+  }
 
   const changed = Number(value) !== entry.price;
 

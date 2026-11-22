@@ -29,6 +29,22 @@ type TagsResponse = {
   tags: TagEntry[];
 };
 
+async function fetchTags(id: string): Promise<TagsResponse> {
+  const response = await fetch(`/api/orders/${id}/tags`, {
+    cache: "no-store",
+  });
+
+  const json = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      json?.details || json?.error || "Failed to load garment tags"
+    );
+  }
+
+  return json;
+}
+
 export default function GarmentTagsPage({
   params,
 }: {
@@ -37,7 +53,12 @@ export default function GarmentTagsPage({
   const { id } = use(params);
 
   const [data, setData] = useState<TagsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Loading covers the first load for this id (derived from which id has
+  // finished loading, so a new id shows it straight away) and explicit
+  // reloads after enabling tag printing.
+  const [loadedId, setLoadedId] = useState<string | null>(null);
+  const [reloading, setReloading] = useState(false);
+  const loading = loadedId !== id || reloading;
   const [error, setError] = useState("");
   const [enabling, setEnabling] = useState(false);
 
@@ -47,47 +68,62 @@ export default function GarmentTagsPage({
   const [printTrigger, setPrintTrigger] = useState(0);
   const initializedSelection = useRef(false);
 
-  async function loadTags() {
-    try {
-      setLoading(true);
-      setError("");
+  function applyTags(json: TagsResponse) {
+    setData(json);
 
-      const response = await fetch(`/api/orders/${id}/tags`, {
-        cache: "no-store",
-      });
-
-      const json = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          json?.details || json?.error || "Failed to load garment tags"
-        );
-      }
-
-      setData(json);
-
-      if (!initializedSelection.current) {
-        const eligibleIds = json.tags
-          .filter((tag: TagEntry) => tag.eligible)
-          .map((tag: TagEntry) => tag.id);
-        setSelectedTagIds(new Set(eligibleIds));
-        initializedSelection.current = true;
-      }
-    } catch (err) {
-      console.error("Load garment tags error:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to load garment tags"
-      );
-    } finally {
-      setLoading(false);
+    if (!initializedSelection.current) {
+      const eligibleIds = json.tags
+        .filter((tag: TagEntry) => tag.eligible)
+        .map((tag: TagEntry) => tag.id);
+      setSelectedTagIds(new Set(eligibleIds));
+      initializedSelection.current = true;
     }
   }
 
-  useEffect(() => {
-    if (id) {
-      loadTags();
+  function showLoadError(err: unknown) {
+    console.error("Load garment tags error:", err);
+    setError(
+      err instanceof Error ? err.message : "Failed to load garment tags"
+    );
+  }
+
+  // Reload after enabling tag printing.
+  async function loadTags() {
+    try {
+      setReloading(true);
+      setError("");
+      applyTags(await fetchTags(id));
+    } catch (err) {
+      showLoadError(err);
+    } finally {
+      setReloading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }
+
+  // Loads whenever the id changes. State is only set from the request's
+  // callbacks, and not at all if the id changed again or the page went away
+  // before it answered.
+  useEffect(() => {
+    if (!id) return;
+
+    let active = true;
+
+    fetchTags(id)
+      .then((json) => {
+        if (!active) return;
+        setError("");
+        applyTags(json);
+      })
+      .catch((err) => {
+        if (active) showLoadError(err);
+      })
+      .finally(() => {
+        if (active) setLoadedId(id);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   useEffect(() => {

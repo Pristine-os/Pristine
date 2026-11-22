@@ -96,9 +96,10 @@ function PickupInner() {
   const [view, setView] = useState<"find" | "found" | "success">("find");
 
   // ---- find: scan ----
-  const [scanLoading, setScanLoading] = useState(false);
+  const [scanLoadingState, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState("");
-  const scanInputKeyRef = useRef(0);
+  // Bumped to remount (and so clear) the scan input.
+  const [scanInputKey, setScanInputKey] = useState(0);
 
   // ---- find: manual ----
   const [manualOpen, setManualOpen] = useState(false);
@@ -132,10 +133,44 @@ function PickupInner() {
   // ---- success ----
   const [success, setSuccess] = useState<SuccessSummary | null>(null);
 
+  // An order opened from a link (?orderId=) loads as if it had just been
+  // scanned: the scan spinner shows until it has loaded.
+  const [prefillLoadedFor, setPrefillLoadedFor] = useState<string | null>(null);
+  const prefillLoading = Boolean(prefillOrderId) && prefillLoadedFor !== prefillOrderId;
+  const scanLoading = scanLoadingState || prefillLoading;
+
+  function showFoundOrder(data: FullOrder) {
+    setOrder(data);
+    setShowPaymentForm(false);
+    setPaymentError("");
+    setPickupError("");
+    setShowBalanceOverride(false);
+    setView("found");
+  }
+
+  // State is only set from the request's callbacks, and not at all if the
+  // link changed again or the page went away before it answered.
   useEffect(() => {
-    if (prefillOrderId) {
-      loadFullOrder(prefillOrderId);
-    }
+    if (!prefillOrderId) return;
+
+    let active = true;
+
+    fetchFullOrder(prefillOrderId)
+      .then((data) => {
+        if (!active) return;
+        setLoadError("");
+        showFoundOrder(data);
+      })
+      .catch((err) => {
+        if (active) setLoadError(err instanceof Error ? err.message : "Order not found");
+      })
+      .finally(() => {
+        if (active) setPrefillLoadedFor(prefillOrderId);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [prefillOrderId]);
 
   async function loadFullOrder(id: string) {
@@ -143,19 +178,7 @@ function PickupInner() {
     setLoadError("");
 
     try {
-      const response = await fetch(`/api/orders/${id}`, { cache: "no-store" });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.details || data?.error || "Order not found");
-      }
-
-      setOrder(data);
-      setShowPaymentForm(false);
-      setPaymentError("");
-      setPickupError("");
-      setShowBalanceOverride(false);
-      setView("found");
+      showFoundOrder(await fetchFullOrder(id));
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Order not found");
     } finally {
@@ -186,19 +209,28 @@ function PickupInner() {
   }
 
   // ---- Manual search (debounced, mirrors GlobalSearch/Counter) ----
-  useEffect(() => {
-    const trimmed = query.trim();
+  // Typing resets or starts the search state immediately; the effect only
+  // runs the debounced request and ignores answers for an outdated query.
+  function changeQuery(next: string) {
+    if (next === query) return;
+    setQuery(next);
 
-    if (!trimmed) {
+    if (!next.trim()) {
       setSearchCustomers([]);
       setSearchOrders([]);
       setSearchLoading(false);
       setSearchError("");
-      return;
+    } else {
+      setSearchLoading(true);
+      setSearchError("");
     }
+  }
 
-    setSearchLoading(true);
-    setSearchError("");
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+
+    let active = true;
 
     const timer = setTimeout(async () => {
       try {
@@ -212,18 +244,23 @@ function PickupInner() {
           throw new Error(data?.error || "Search failed");
         }
 
+        if (!active) return;
         setSearchCustomers(data.customers || []);
         setSearchOrders(data.orders || []);
       } catch (err) {
+        if (!active) return;
         setSearchError(err instanceof Error ? err.message : "Search failed");
         setSearchCustomers([]);
         setSearchOrders([]);
       } finally {
-        setSearchLoading(false);
+        if (active) setSearchLoading(false);
       }
     }, 300);
 
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [query]);
 
   async function pickCustomer(customerId: string) {
@@ -252,7 +289,7 @@ function PickupInner() {
 
   function resetManual() {
     setManualOpen(false);
-    setQuery("");
+    changeQuery("");
     setSearchCustomers([]);
     setSearchOrders([]);
     setCustomerOrders(null);
@@ -386,7 +423,7 @@ function PickupInner() {
     setPaymentError("");
     setPickupError("");
     setShowBalanceOverride(false);
-    scanInputKeyRef.current += 1;
+    setScanInputKey((key) => key + 1);
     setView("find");
   }
 
@@ -464,7 +501,7 @@ function PickupInner() {
 
         <div className="rounded-xl border bg-white p-6 shadow-sm mb-6">
           <ScanInput
-            key={scanInputKeyRef.current}
+            key={scanInputKey}
             label="Scan Invoice"
             placeholder="PR-1234567890123"
             autoFocus
@@ -500,7 +537,7 @@ function PickupInner() {
 
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => changeQuery(e.target.value)}
               placeholder="Search..."
               autoFocus
               className="w-full rounded-lg border px-4 py-3 text-lg"
@@ -950,6 +987,17 @@ function PickupInner() {
       </div>
     </div>
   );
+}
+
+async function fetchFullOrder(id: string): Promise<FullOrder> {
+  const response = await fetch(`/api/orders/${id}`, { cache: "no-store" });
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data?.details || data?.error || "Order not found");
+  }
+
+  return data;
 }
 
 export default function PickupPage() {

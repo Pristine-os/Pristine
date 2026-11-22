@@ -16,13 +16,37 @@ type OrderSummary = {
 type RackOption = { id: string; name: string; active: boolean };
 type RackLookup = { id: string; name: string; barcodeValue: string; active: boolean };
 
+// Loads an order by id in the shape this page shows.
+async function fetchOrderForRack(id: string): Promise<OrderSummary> {
+  const response = await fetch(`/api/orders/${id}`, { cache: "no-store" });
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data?.error || "Order not found");
+  }
+
+  const physicalGarmentCount = (data.garments || []).reduce(
+    (sum: number, g: { quantity: number }) => sum + g.quantity,
+    0
+  );
+
+  return {
+    id: data.id,
+    orderNumber: data.orderNumber,
+    status: data.status,
+    customer: data.customer,
+    physicalGarmentCount,
+    rack: data.rack,
+  };
+}
+
 function RackAssignmentInner() {
   const searchParams = useSearchParams();
   const prefillOrderId = searchParams.get("orderId");
 
   const [order, setOrder] = useState<OrderSummary | null>(null);
   const [orderError, setOrderError] = useState("");
-  const [orderLoading, setOrderLoading] = useState(false);
+  const [orderLoadingState, setOrderLoading] = useState(false);
 
   const [rackOptions, setRackOptions] = useState<RackOption[]>([]);
   const [selectedRack, setSelectedRack] = useState<RackLookup | null>(null);
@@ -41,45 +65,39 @@ function RackAssignmentInner() {
       .catch((err) => console.error("Failed to load racks:", err));
   }, []);
 
+  // An order opened from a link (?orderId=) loads as if it had just been
+  // scanned: "Looking up order..." shows until it has loaded. State is only
+  // set from the request's callbacks, and not at all if the link changed
+  // again or the page went away before it answered.
+  const [prefillLoadedFor, setPrefillLoadedFor] = useState<string | null>(null);
+  const prefillLoading = Boolean(prefillOrderId) && prefillLoadedFor !== prefillOrderId;
+  const orderLoading = orderLoadingState || prefillLoading;
+
   useEffect(() => {
-    if (prefillOrderId) {
-      loadOrderById(prefillOrderId);
-    }
-  }, [prefillOrderId]);
+    if (!prefillOrderId) return;
 
-  async function loadOrderById(id: string) {
-    setOrderLoading(true);
-    setOrderError("");
-    setSuccessMessage("");
+    let active = true;
 
-    try {
-      const response = await fetch(`/api/orders/${id}`, { cache: "no-store" });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.error || "Order not found");
-      }
-
-      const physicalGarmentCount = (data.garments || []).reduce(
-        (sum: number, g: { quantity: number }) => sum + g.quantity,
-        0
-      );
-
-      setOrder({
-        id: data.id,
-        orderNumber: data.orderNumber,
-        status: data.status,
-        customer: data.customer,
-        physicalGarmentCount,
-        rack: data.rack,
+    fetchOrderForRack(prefillOrderId)
+      .then((info) => {
+        if (!active) return;
+        setOrderError("");
+        setSuccessMessage("");
+        setOrder(info);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setOrderError(err instanceof Error ? err.message : "Order not found");
+        setOrder(null);
+      })
+      .finally(() => {
+        if (active) setPrefillLoadedFor(prefillOrderId);
       });
-    } catch (err) {
-      setOrderError(err instanceof Error ? err.message : "Order not found");
-      setOrder(null);
-    } finally {
-      setOrderLoading(false);
-    }
-  }
+
+    return () => {
+      active = false;
+    };
+  }, [prefillOrderId]);
 
   async function handleOrderScan(code: string) {
     setOrderLoading(true);
