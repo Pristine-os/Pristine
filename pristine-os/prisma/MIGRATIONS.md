@@ -180,3 +180,11 @@ rows (an implicit-default Owner, an explicit Owner, a Manager, an order):
   all rows were identical before and after, the migration was recorded as
   unfinished, further deploys were blocked with `P3009`, and after fixing the
   cause `migrate resolve --rolled-back` + `migrate deploy` succeeded.
+
+## `20261122000100_add_login_throttle` (login rate limiting)
+
+Creates the `LoginThrottle` table — additive, one transaction, rollback SQL in
+the file header. It holds only short-lived HMAC-keyed counters, no business
+data. Apply it with the same reviewed steps as `20261018000000_add_user_roles`
+above, **before** deploying the code that uses it: without the table every
+login attempt fails.
